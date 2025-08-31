@@ -1,0 +1,219 @@
+use serde::{Deserialize, Serialize};
+use std::{fs, path::PathBuf};
+use rusqlite::{Connection, params};
+use chrono::Utc;
+use tauri::Manager;
+use crate::modules::utils::uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub archived: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String, // "user" | "assistant"
+    pub content: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateConversationInput { 
+    pub title: Option<String> 
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddMessageInput { 
+    pub conversation_id: String, 
+    pub role: String, 
+    pub content: String 
+}
+
+pub fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let mut dir = app.path().app_data_dir().map_err(|e| format!("paths: {e}"))?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("create app data dir: {e}"))?;
+    }
+    dir.push("app.db");
+    Ok(dir)
+}
+
+pub fn get_conn(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(path).map_err(|e| format!("open db: {e}"))?;
+    conn.execute_batch(
+        r#"
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS conversations (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          archived INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_id_created_at
+          ON messages(conversation_id, created_at);
+        "#,
+    ).map_err(|e| format!("migrate: {e}"))?;
+    // Try to add archived column if upgrading
+    let _ = conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0", []);
+    Ok(conn)
+}
+
+
+
+#[tauri::command]
+pub async fn db_list_conversations(app: tauri::AppHandle) -> Result<Vec<Conversation>, String> {
+    let conn = get_conn(&app)?;
+    let mut stmt = conn.prepare("SELECT id, title, created_at, archived FROM conversations ORDER BY datetime(created_at) DESC").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Conversation {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            created_at: row.get(2)?,
+            archived: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(|e| e.to_string())?); }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn db_get_messages(app: tauri::AppHandle, conversation_id: String) -> Result<Vec<Message>, String> {
+    let conn = get_conn(&app)?;
+    let mut stmt = conn.prepare("SELECT id, conversation_id, role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY datetime(created_at) ASC").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([conversation_id], |row| {
+        Ok(Message {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            role: row.get(2)?,
+            content: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows { out.push(r.map_err(|e| e.to_string())?); }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn db_create_conversation(app: tauri::AppHandle, input: Option<CreateConversationInput>) -> Result<Conversation, String> {
+    let conn = get_conn(&app)?;
+    let id = format!("{}", uuid());
+    let created_at = Utc::now().to_rfc3339();
+    let title = input.and_then(|i| i.title).unwrap_or_else(|| "New Chat".to_string());
+    conn.execute(
+        "INSERT INTO conversations (id, title, created_at, archived) VALUES (?, ?, ?, 0)",
+        params![id, title, created_at],
+    ).map_err(|e| e.to_string())?;
+    Ok(Conversation { id, title, created_at, archived: 0 })
+}
+
+#[tauri::command]
+pub async fn db_add_message(app: tauri::AppHandle, input: AddMessageInput) -> Result<Message, String> {
+    let conn = get_conn(&app)?;
+    let id = format!("{}", uuid());
+    let created_at = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        params![id, input.conversation_id, input.role, input.content, created_at],
+    ).map_err(|e| e.to_string())?;
+    Ok(Message { 
+        id, 
+        conversation_id: input.conversation_id, 
+        role: input.role, 
+        content: input.content, 
+        created_at 
+    })
+}
+
+#[tauri::command]
+pub async fn db_delete_conversation(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let conn = get_conn(&app)?;
+    conn.execute("DELETE FROM messages WHERE conversation_id = ?", params![id]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM conversations WHERE id = ?", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_archive_conversation(app: tauri::AppHandle, id: String, archived: bool) -> Result<(), String> {
+    let conn = get_conn(&app)?;
+    conn.execute("UPDATE conversations SET archived = ? WHERE id = ?", params![if archived {1} else {0}, id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_update_conversation_title(app: tauri::AppHandle, id: String, title: String) -> Result<Conversation, String> {
+    let conn = get_conn(&app)?;
+    conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![title, id]).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id, title, created_at, archived FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let id_v: String = row.get(0).map_err(|e| e.to_string())?;
+        let title_v: String = row.get(1).map_err(|e| e.to_string())?;
+        let created_v: String = row.get(2).map_err(|e| e.to_string())?;
+        let archived_v: i64 = row.get(3).map_err(|e| e.to_string())?;
+        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v });
+    }
+    Err("conversation not found".into())
+}
+
+#[tauri::command]
+pub async fn db_generate_conversation_title(app: tauri::AppHandle, conversation_id: String, model: Option<String>) -> Result<Conversation, String> {
+    let _ = dotenvy::dotenv();
+    let conn = get_conn(&app)?;
+    use rusqlite::OptionalExtension;
+    use crate::modules::settings::setup_provider_env_for_model;
+    
+    // fetch first user message
+    let first_user: Option<String> = conn
+        .query_row(
+            "SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY datetime(created_at) ASC LIMIT 1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let prompt = first_user.unwrap_or_else(|| "New Chat".to_string());
+    use genai::Client;
+    use genai::chat::{ChatMessage, ChatRequest};
+    let client = Client::default();
+    let system = "Return a short, descriptive chat title (max 6 words). No quotes or trailing punctuation.";
+    let req = ChatRequest::new(vec![ChatMessage::system(system), ChatMessage::user(&prompt)]);
+    let model_name = model.unwrap_or_else(|| "gemini-1.5-flash".to_string());
+    setup_provider_env_for_model(&app, &model_name);
+    let mut title = client.exec_chat(&model_name, req, None)
+        .await
+        .map_err(|e| e.to_string())?
+        .first_text()
+        .unwrap_or("New Chat")
+        .trim()
+        .to_string();
+    if title.ends_with('.') { title.pop(); }
+    if title.is_empty() { title = "New Chat".to_string(); }
+
+    conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![title, conversation_id]).map_err(|e| e.to_string())?;
+    let mut stmt2 = conn.prepare("SELECT id, title, created_at, archived FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut rows = stmt2.query(params![conversation_id]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let id_v: String = row.get(0).map_err(|e| e.to_string())?;
+        let title_v: String = row.get(1).map_err(|e| e.to_string())?;
+        let created_v: String = row.get(2).map_err(|e| e.to_string())?;
+        let archived_v: i64 = row.get(3).map_err(|e| e.to_string())?;
+        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v });
+    }
+    Err("conversation not found".into())
+}

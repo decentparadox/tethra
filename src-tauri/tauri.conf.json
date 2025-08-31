@@ -1,0 +1,53 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "tethra",
+  "version": "0.1.0",
+  "identifier": "com.decentparadox.tethra",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Tethra",
+        "width": 1024,
+        "minWidth": 375,
+        "minHeight": 667,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "transparent": true,
+        "center": true,
+        "hiddenTitle": true,
+        "decorations": true,
+       
+        "titleBarStyle": "Overlay",
+        
+        "windowEffects": {
+          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "state": "active",
+          "radius": 2
+        }
+      }
+    ],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
+
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
