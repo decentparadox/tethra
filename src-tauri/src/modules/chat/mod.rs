@@ -5,7 +5,7 @@ use rusqlite::params;
 use crate::modules::settings::{read_settings, setup_provider_env_for_model};
 use crate::modules::database::get_conn;
 use crate::modules::utils::uuid;
-use crate::modules::providers::{GeminiProvider, OpenAIProvider, AnthropicProvider, OpenRouterProvider};
+use crate::modules::providers::{GeminiProvider, OpenAIProvider, AnthropicProvider, OpenRouterProvider, OllamaProvider};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatStreamToken {
@@ -92,7 +92,11 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                                   model.starts_with("gpt-") || 
                                   model.starts_with("claude-") || 
                                   model.contains("openrouter") ||
-                                  model.starts_with("o1-");
+                                  model.starts_with("o1-") ||
+                                  model.contains(":") || // Ollama models typically have format like "llama3.2:3b"
+                                  model.starts_with("llama") ||
+                                  model.starts_with("qwen") ||
+                                  model.starts_with("codellama");
 
         if use_manual_streaming {
             // Use manual streaming providers
@@ -168,6 +172,17 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                             complete_content = format!("Failed to start stream: {}", e);
                             None
                         }
+                    }
+                }
+            } else if model.contains(":") || model.starts_with("llama") || model.starts_with("qwen") || model.starts_with("codellama") {
+                // Ollama provider - no API key needed as it runs locally
+                let provider = OllamaProvider::new();
+                match provider.stream_chat(&model, &user_text).await {
+                    Ok(stream) => Some(stream),
+                    Err(e) => {
+                        eprintln!("Failed to start Ollama stream: {}", e);
+                        complete_content = format!("Failed to start Ollama stream: {}", e);
+                        None
                     }
                 }
             } else {
@@ -697,23 +712,32 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
 pub async fn get_adapter_models(adapter_kind: String) -> Result<Vec<String>, String> {
     let _ = dotenvy::dotenv();
 
-    use genai::Client;
-    use genai::adapter::AdapterKind;
+    match adapter_kind.as_str() {
+        "Ollama" => {
+            // Use our custom OllamaProvider for better integration
+            let provider = OllamaProvider::new();
+            provider.list_models().await
+        }
+        _ => {
+            // Use genai for other providers
+            use genai::Client;
+            use genai::adapter::AdapterKind;
 
-    let client = Client::default();
+            let client = Client::default();
 
-    let kind = match adapter_kind.as_str() {
-        "OpenAI" => AdapterKind::OpenAI,
-        "Anthropic" => AdapterKind::Anthropic,
-        "Gemini" => AdapterKind::Gemini,
-        "Groq" => AdapterKind::Groq,
-        "Ollama" => AdapterKind::Ollama,
-        "Cohere" => AdapterKind::Cohere,
-        _ => return Err(format!("Unsupported adapter kind: {}", adapter_kind)),
-    };
+            let kind = match adapter_kind.as_str() {
+                "OpenAI" => AdapterKind::OpenAI,
+                "Anthropic" => AdapterKind::Anthropic,
+                "Gemini" => AdapterKind::Gemini,
+                "Groq" => AdapterKind::Groq,
+                "Cohere" => AdapterKind::Cohere,
+                _ => return Err(format!("Unsupported adapter kind: {}", adapter_kind)),
+            };
 
-    match client.all_model_names(kind).await {
-        Ok(models) => Ok(models),
-        Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
+            match client.all_model_names(kind).await {
+                Ok(models) => Ok(models),
+                Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
+            }
+        }
     }
 }
