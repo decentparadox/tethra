@@ -97,7 +97,9 @@ export function AppSidebar() {
   }, []);
 
   const handleNewChat = async () => {
-    const conv = await createConversation();
+    // Get the currently selected model from localStorage
+    const selectedModel = localStorage.getItem("selected-model");
+    const conv = await createConversation(undefined, selectedModel || undefined);
     await refresh();
     window.location.href = `/dashboard/${conv.id}`;
   };

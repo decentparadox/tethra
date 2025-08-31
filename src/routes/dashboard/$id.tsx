@@ -10,7 +10,7 @@ export const Route = createFileRoute('/dashboard/$id')({
 function RouteComponent() {
 const { id } = useParams({ from: Route.id })
   return (
-    <DashboardLayout>
+    <DashboardLayout conversationId={id}>
       <GlobalShortcuts />
       <ChatView conversationId={id} />
     </DashboardLayout>

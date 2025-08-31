@@ -33,10 +33,13 @@ pub fn run() {
             stream_chat,
             list_chat_models,
             get_adapter_models,
+            get_ollama_model_info,
             db_delete_conversation,
             db_archive_conversation,
             db_update_conversation_title,
-            db_generate_conversation_title
+            db_generate_conversation_title,
+            db_update_conversation_model,
+            db_get_conversation
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

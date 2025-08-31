@@ -5,7 +5,7 @@ use rusqlite::params;
 use crate::modules::settings::{read_settings, setup_provider_env_for_model};
 use crate::modules::database::get_conn;
 use crate::modules::utils::uuid;
-use crate::modules::providers::{GeminiProvider, OpenAIProvider, AnthropicProvider, OpenRouterProvider};
+use crate::modules::providers::{GeminiProvider, OpenAIProvider, AnthropicProvider, OpenRouterProvider, OllamaProvider};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatStreamToken {
@@ -71,6 +71,11 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
     setup_provider_env_for_model(&app, &model);
     let conversation_id = input.conversation_id.clone();
     let user_text = input.user_message.clone();
+    
+    // Update the conversation with the model being used (for persistence)
+    if let Err(e) = crate::modules::database::db_update_conversation_model(app.clone(), conversation_id.clone(), model.clone()).await {
+        eprintln!("Warning: Failed to update conversation model: {}", e);
+    }
 
     let window = app.get_webview_window("main").ok_or_else(|| "no main window".to_string())?;
 
@@ -92,7 +97,11 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                                   model.starts_with("gpt-") || 
                                   model.starts_with("claude-") || 
                                   model.contains("openrouter") ||
-                                  model.starts_with("o1-");
+                                  model.starts_with("o1-") ||
+                                  model.contains(":") || // Ollama models typically have format like "llama3.2:3b"
+                                  model.starts_with("llama") ||
+                                  model.starts_with("qwen") ||
+                                  model.starts_with("codellama");
 
         if use_manual_streaming {
             // Use manual streaming providers
@@ -170,6 +179,17 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                         }
                     }
                 }
+            } else if model.contains(":") || model.starts_with("llama") || model.starts_with("qwen") || model.starts_with("codellama") {
+                // Ollama provider - no API key needed as it runs locally
+                let provider = OllamaProvider::new();
+                match provider.stream_chat(&model, &user_text).await {
+                    Ok(stream) => Some(stream),
+                    Err(e) => {
+                        eprintln!("Failed to start Ollama stream: {}", e);
+                        complete_content = format!("Failed to start Ollama stream: {}", e);
+                        None
+                    }
+                }
             } else {
                 None
             };
@@ -186,7 +206,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                             // Emit token to frontend
                             let _ = window.emit("chat_stream_token", ChatStreamToken {
                                 conversation_id: conversation_id.clone(),
-                                token: token.clone(),
+                                token: token.to_string(),
                             });
                         }
                         Err(e) => {
@@ -655,20 +675,37 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
         });
     }
 
-    // Ollama - show popular models (local models, so enabled by default)
-    let default_ollama_models = vec![
-        "llama3.2:3b",
-        "llama3.1:8b", 
-        "llama3.1:70b",
-        "qwen2.5:7b",
-        "codellama:7b"
-    ];
-    for model in default_ollama_models {
-        out.push(ListedModel {
-            model: model.to_string(),
-            adapter_kind: "Ollama".to_string(),
-            enabled: true, // Ollama runs locally, no API key needed
-        });
+    // Ollama - try to fetch actual local models, fallback to defaults if Ollama is not running
+    let ollama_provider = OllamaProvider::new();
+    match ollama_provider.list_models().await {
+        Ok(local_models) => {
+            // Use actual local models
+            for model in local_models {
+                out.push(ListedModel {
+                    model: model,
+                    adapter_kind: "Ollama".to_string(),
+                    enabled: true, // Ollama runs locally, no API key needed
+                });
+            }
+        }
+        Err(e) => {
+            println!("Failed to fetch Ollama models ({}), using defaults", e);
+            // Fallback to default popular models if Ollama is not running
+            let default_ollama_models = vec![
+                "llama3.2:3b",
+                "llama3.1:8b", 
+                "llama3.1:70b",
+                "qwen2.5:7b",
+                "codellama:7b"
+            ];
+            for model in default_ollama_models {
+                out.push(ListedModel {
+                    model: model.to_string(),
+                    adapter_kind: "Ollama".to_string(),
+                    enabled: false, // Mark as disabled since Ollama is not running
+                });
+            }
+        }
     }
 
     // Grok (X.AI) - show popular models (no built-in settings support yet)
@@ -697,23 +734,38 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
 pub async fn get_adapter_models(adapter_kind: String) -> Result<Vec<String>, String> {
     let _ = dotenvy::dotenv();
 
-    use genai::Client;
-    use genai::adapter::AdapterKind;
+    match adapter_kind.as_str() {
+        "Ollama" => {
+            // Use our custom OllamaProvider for better integration
+            let provider = OllamaProvider::new();
+            provider.list_models().await
+        }
+        _ => {
+            // Use genai for other providers
+            use genai::Client;
+            use genai::adapter::AdapterKind;
 
-    let client = Client::default();
+            let client = Client::default();
 
-    let kind = match adapter_kind.as_str() {
-        "OpenAI" => AdapterKind::OpenAI,
-        "Anthropic" => AdapterKind::Anthropic,
-        "Gemini" => AdapterKind::Gemini,
-        "Groq" => AdapterKind::Groq,
-        "Ollama" => AdapterKind::Ollama,
-        "Cohere" => AdapterKind::Cohere,
-        _ => return Err(format!("Unsupported adapter kind: {}", adapter_kind)),
-    };
+            let kind = match adapter_kind.as_str() {
+                "OpenAI" => AdapterKind::OpenAI,
+                "Anthropic" => AdapterKind::Anthropic,
+                "Gemini" => AdapterKind::Gemini,
+                "Groq" => AdapterKind::Groq,
+                "Cohere" => AdapterKind::Cohere,
+                _ => return Err(format!("Unsupported adapter kind: {}", adapter_kind)),
+            };
 
-    match client.all_model_names(kind).await {
-        Ok(models) => Ok(models),
-        Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
+            match client.all_model_names(kind).await {
+                Ok(models) => Ok(models),
+                Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
+            }
+        }
     }
+}
+
+#[tauri::command]
+pub async fn get_ollama_model_info(model_name: String) -> Result<String, String> {
+    let provider = OllamaProvider::new();
+    provider.get_model_info(&model_name).await
 }

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { listChatModels, type ListedModel } from "../lib/chat";
+import { listChatModels, type ListedModel, getConversation, updateConversationModel } from "../lib/chat";
 import ModelIcon, { type ModelType } from "@/components/model-icon";
 
 function toIcon(adapter: string): ModelType {
@@ -28,7 +28,7 @@ function toIcon(adapter: string): ModelType {
   return key as ModelType;
 }
 
-export default function ModelSelector() {
+export default function ModelSelector({ conversationId }: { conversationId?: string }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ListedModel[]>([]);
   const [selected, setSelected] = useState<string | undefined>(undefined);
@@ -40,9 +40,16 @@ export default function ModelSelector() {
         setModels(list);
         const enabled = list.filter((m:any) => m.enabled);
         const def = enabled[0]?.model ?? list[0]?.model;
-        if (def) {
+        
+        // Try to load from localStorage first, fallback to default
+        const storedModel = localStorage.getItem("selected-model");
+        const modelToUse = storedModel && list.find(m => m.model === storedModel) ? storedModel : def;
+        
+        if (modelToUse) {
           setSelected((s) => {
-            const newSelected = s ?? def;
+            const newSelected = s ?? modelToUse;
+            // Store in localStorage for new conversations
+            localStorage.setItem("selected-model", newSelected);
             // Notify chat view of the initial selection
             if (!s) {
               window.dispatchEvent(new CustomEvent("model-selected", { detail: newSelected }));
@@ -53,6 +60,26 @@ export default function ModelSelector() {
       } catch {}
     })();
   }, []);
+
+  // Load conversation's stored model when conversationId changes
+  useEffect(() => {
+    if (conversationId) {
+      (async () => {
+        try {
+          const conversation = await getConversation(conversationId);
+          if (conversation.model) {
+            setSelected(conversation.model);
+            // Store in localStorage for consistency
+            localStorage.setItem("selected-model", conversation.model);
+            // Notify chat view of the conversation's model
+            window.dispatchEvent(new CustomEvent("model-selected", { detail: conversation.model }));
+          }
+        } catch (error) {
+          console.warn("Failed to load conversation model:", error);
+        }
+      })();
+    }
+  }, [conversationId]);
 
   const selectedMeta = useMemo(() => models.find((m) => m.model === selected), [models, selected]);
 
@@ -90,10 +117,23 @@ export default function ModelSelector() {
                 <CommandItem
                   key={m.model}
                   value={m.model}
-                  onSelect={(current) => {
+                  onSelect={async (current) => {
                     // Allow selection of disabled models too, but show warning
                     setSelected(current);
                     setOpen(false);
+                    
+                    // Store current selection in localStorage for new conversations
+                    localStorage.setItem("selected-model", current);
+                    
+                    // Persist the model selection if we have a conversation
+                    if (conversationId) {
+                      try {
+                        await updateConversationModel(conversationId, current);
+                      } catch (error) {
+                        console.warn("Failed to persist model selection:", error);
+                      }
+                    }
+                    
                     // Notify listeners (e.g., chat view)
                     window.dispatchEvent(new CustomEvent("model-selected", { detail: current }));
                   }}

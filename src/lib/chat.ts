@@ -5,6 +5,7 @@ export type Conversation = {
   title: string;
   created_at: string;
   archived: number;
+  model?: string;
 };
 
 export type Message = {
@@ -26,8 +27,8 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
   return await invoke<Message[]>("db_get_messages", { conversationId, conversation_id: conversationId });
 }
 
-export async function createConversation(title?: string): Promise<Conversation> {
-  return await invoke<Conversation>("db_create_conversation", { input: { title } });
+export async function createConversation(title?: string, model?: string): Promise<Conversation> {
+  return await invoke<Conversation>("db_create_conversation", { input: { title, model } });
 }
 
 export async function addMessage(
@@ -60,6 +61,14 @@ export async function updateConversationTitle(id: string, title: string): Promis
 
 export async function generateConversationTitle(id: string, model?: string): Promise<Conversation> {
   return await invoke<Conversation>("db_generate_conversation_title", { conversationId: id, conversation_id: id, model });
+}
+
+export async function getConversation(id: string): Promise<Conversation> {
+  return await invoke<Conversation>("db_get_conversation", { conversationId: id, conversation_id: id });
+}
+
+export async function updateConversationModel(id: string, model: string): Promise<void> {
+  await invoke("db_update_conversation_model", { conversationId: id, conversation_id: id, model });
 }
 
 

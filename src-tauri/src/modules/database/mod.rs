@@ -11,6 +11,7 @@ pub struct Conversation {
     pub title: String,
     pub created_at: String,
     pub archived: i64,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +25,8 @@ pub struct Message {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateConversationInput { 
-    pub title: Option<String> 
+    pub title: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,7 +55,8 @@ pub fn get_conn(app: &tauri::AppHandle) -> Result<Connection, String> {
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
           created_at TEXT NOT NULL,
-          archived INTEGER NOT NULL DEFAULT 0
+          archived INTEGER NOT NULL DEFAULT 0,
+          model TEXT
         );
         CREATE TABLE IF NOT EXISTS messages (
           id TEXT PRIMARY KEY,
@@ -68,6 +71,8 @@ pub fn get_conn(app: &tauri::AppHandle) -> Result<Connection, String> {
     ).map_err(|e| format!("migrate: {e}"))?;
     // Try to add archived column if upgrading
     let _ = conn.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0", []);
+    // Try to add model column if upgrading
+    let _ = conn.execute("ALTER TABLE conversations ADD COLUMN model TEXT", []);
     Ok(conn)
 }
 
@@ -76,13 +81,14 @@ pub fn get_conn(app: &tauri::AppHandle) -> Result<Connection, String> {
 #[tauri::command]
 pub async fn db_list_conversations(app: tauri::AppHandle) -> Result<Vec<Conversation>, String> {
     let conn = get_conn(&app)?;
-    let mut stmt = conn.prepare("SELECT id, title, created_at, archived FROM conversations ORDER BY datetime(created_at) DESC").map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id, title, created_at, archived, model FROM conversations ORDER BY datetime(created_at) DESC").map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], |row| {
         Ok(Conversation {
             id: row.get(0)?,
             title: row.get(1)?,
             created_at: row.get(2)?,
             archived: row.get(3)?,
+            model: row.get(4)?,
         })
     }).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
@@ -113,12 +119,13 @@ pub async fn db_create_conversation(app: tauri::AppHandle, input: Option<CreateC
     let conn = get_conn(&app)?;
     let id = format!("{}", uuid());
     let created_at = Utc::now().to_rfc3339();
-    let title = input.and_then(|i| i.title).unwrap_or_else(|| "New Chat".to_string());
+    let title = input.as_ref().and_then(|i| i.title.clone()).unwrap_or_else(|| "New Chat".to_string());
+    let model = input.as_ref().and_then(|i| i.model.clone());
     conn.execute(
-        "INSERT INTO conversations (id, title, created_at, archived) VALUES (?, ?, ?, 0)",
-        params![id, title, created_at],
+        "INSERT INTO conversations (id, title, created_at, archived, model) VALUES (?, ?, ?, 0, ?)",
+        params![id, title, created_at, model],
     ).map_err(|e| e.to_string())?;
-    Ok(Conversation { id, title, created_at, archived: 0 })
+    Ok(Conversation { id, title, created_at, archived: 0, model })
 }
 
 #[tauri::command]
@@ -158,14 +165,15 @@ pub async fn db_archive_conversation(app: tauri::AppHandle, id: String, archived
 pub async fn db_update_conversation_title(app: tauri::AppHandle, id: String, title: String) -> Result<Conversation, String> {
     let conn = get_conn(&app)?;
     conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![title, id]).map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id, title, created_at, archived FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id, title, created_at, archived, model FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
     let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let id_v: String = row.get(0).map_err(|e| e.to_string())?;
         let title_v: String = row.get(1).map_err(|e| e.to_string())?;
         let created_v: String = row.get(2).map_err(|e| e.to_string())?;
         let archived_v: i64 = row.get(3).map_err(|e| e.to_string())?;
-        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v });
+        let model_v: Option<String> = row.get(4).map_err(|e| e.to_string())?;
+        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v, model: model_v });
     }
     Err("conversation not found".into())
 }
@@ -206,14 +214,41 @@ pub async fn db_generate_conversation_title(app: tauri::AppHandle, conversation_
     if title.is_empty() { title = "New Chat".to_string(); }
 
     conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![title, conversation_id]).map_err(|e| e.to_string())?;
-    let mut stmt2 = conn.prepare("SELECT id, title, created_at, archived FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut stmt2 = conn.prepare("SELECT id, title, created_at, archived, model FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
     let mut rows = stmt2.query(params![conversation_id]).map_err(|e| e.to_string())?;
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let id_v: String = row.get(0).map_err(|e| e.to_string())?;
         let title_v: String = row.get(1).map_err(|e| e.to_string())?;
         let created_v: String = row.get(2).map_err(|e| e.to_string())?;
         let archived_v: i64 = row.get(3).map_err(|e| e.to_string())?;
-        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v });
+        let model_v: Option<String> = row.get(4).map_err(|e| e.to_string())?;
+        return Ok(Conversation { id: id_v, title: title_v, created_at: created_v, archived: archived_v, model: model_v });
+    }
+    Err("conversation not found".into())
+}
+
+#[tauri::command]
+pub async fn db_update_conversation_model(app: tauri::AppHandle, conversation_id: String, model: String) -> Result<(), String> {
+    let conn = get_conn(&app)?;
+    conn.execute(
+        "UPDATE conversations SET model = ? WHERE id = ?", 
+        params![model, conversation_id]
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_get_conversation(app: tauri::AppHandle, conversation_id: String) -> Result<Conversation, String> {
+    let conn = get_conn(&app)?;
+    let mut stmt = conn.prepare("SELECT id, title, created_at, archived, model FROM conversations WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![conversation_id]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let id: String = row.get(0).map_err(|e| e.to_string())?;
+        let title: String = row.get(1).map_err(|e| e.to_string())?;
+        let created_at: String = row.get(2).map_err(|e| e.to_string())?;
+        let archived: i64 = row.get(3).map_err(|e| e.to_string())?;
+        let model: Option<String> = row.get(4).map_err(|e| e.to_string())?;
+        return Ok(Conversation { id, title, created_at, archived, model });
     }
     Err("conversation not found".into())
 }

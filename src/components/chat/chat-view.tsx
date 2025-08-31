@@ -199,7 +199,11 @@ export default function ChatView({
     
     const handler = (e: any) => {
       const selected = e?.detail as string | undefined;
-      if (selected) setSelectedModel(selected);
+      if (selected) {
+        setSelectedModel(selected);
+        // Store in localStorage for consistency
+        localStorage.setItem("selected-model", selected);
+      }
     };
     window.addEventListener("model-selected", handler as EventListener);
     return () => window.removeEventListener("model-selected", handler as EventListener);
