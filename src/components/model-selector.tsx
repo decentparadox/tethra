@@ -113,12 +113,12 @@ export default function ModelSelector({ conversationId }: { conversationId?: str
           <CommandList>
             <CommandEmpty>No models found.</CommandEmpty>
             <CommandGroup>
-              {models.map((m) => (
+              {models.filter(m => m.enabled).map((m) => (
                 <CommandItem
                   key={m.model}
                   value={m.model}
                   onSelect={async (current) => {
-                    // Allow selection of disabled models too, but show warning
+                    // Only enabled models are shown, so this is always a valid selection
                     setSelected(current);
                     setOpen(false);
                     
@@ -137,7 +137,7 @@ export default function ModelSelector({ conversationId }: { conversationId?: str
                     // Notify listeners (e.g., chat view)
                     window.dispatchEvent(new CustomEvent("model-selected", { detail: current }));
                   }}
-                  className={cn(!m.enabled && "opacity-50")}
+                  className=""
                 >
                   <ModelIcon className="mr-2 size-4" model={toIcon(m.adapter_kind)} />
                   <span className="truncate">{m.model}</span>

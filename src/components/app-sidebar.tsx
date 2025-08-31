@@ -1,6 +1,6 @@
-import { Calendar, Home, Inbox, Search, Settings, Plus, MoreHorizontal, Trash2, Archive, Share2, Wand2 } from "lucide-react";
+import { Calendar, Home, Inbox, Search, Settings, Plus, MoreHorizontal, Trash2, Archive, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { listConversations, createConversation, deleteConversation, archiveConversation, updateConversationTitle, generateConversationTitle, getMessages, type Conversation } from "../lib/chat";
+import { listConversations, createConversation, deleteConversation, archiveConversation, getMessages, type Conversation } from "../lib/chat";
 import { chatCache } from "../lib/chat-cache";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 
@@ -130,11 +130,7 @@ export function AppSidebar() {
                         <MoreHorizontal className="size-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={async () => { await generateConversationTitle(c.id); await refresh(); }}>
-                          <Wand2 className="size-4" />
-                          Generate title
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
+
                         <DropdownMenuItem onClick={async () => { await archiveConversation(c.id, c.archived === 0); await refresh(); }}>
                           <Archive className="size-4" />
                           {c.archived ? 'Unarchive' : 'Archive'}
