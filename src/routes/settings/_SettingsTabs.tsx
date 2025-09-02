@@ -57,7 +57,7 @@ export default function SettingsTabs() {
         </div>
         
 
-        <div className="flex-1 min-w-0 w-full p-6 space-y-6">
+        <div className="flex-1 min-h-screen min-w-0 w-full p-6 space-y-6">
           <TabsContent value="general" className="m-0 flex flex-col gap-2">
             <h1 className="text-2xl font-mondwest mb-4">General</h1>
             <GeneralTab />
