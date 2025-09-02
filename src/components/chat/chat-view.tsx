@@ -50,55 +50,84 @@ export default function ChatView({
   );
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const streamStartAtRef = useRef<number | null>(null);
   const [speeds, setSpeeds] = useState<SpeedMap>({});
   const [currentStreamingMessageId, setCurrentStreamingMessageId] = useState<string | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const lastConversationIdRef = useRef<string | undefined>(conversationId);
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get the scroll viewport element
+  const getScrollViewport = () => {
+    // The viewport is the actual scrolling element in RadixUI ScrollArea
+    return scrollViewportRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement | null;
+  };
 
   // Save scroll position when switching conversations
   const saveScrollPosition = () => {
-    if (lastConversationIdRef.current && scrollAreaRef.current) {
-      const scrollTop = scrollAreaRef.current.scrollTop;
-      chatCache.setScrollPosition(lastConversationIdRef.current, scrollTop);
-    }
-  };
-
-  // Restore scroll position for current conversation
-  const restoreScrollPosition = () => {
-    if (convId && scrollAreaRef.current) {
-      const savedPosition = chatCache.getScrollPosition(convId);
-      if (savedPosition !== null) {
-        // Use requestAnimationFrame to ensure DOM is ready
-        requestAnimationFrame(() => {
-          if (scrollAreaRef.current) {
-            scrollAreaRef.current.scrollTop = savedPosition;
-            setShouldAutoScroll(false);
-          }
-        });
-      } else {
-        // First time or no saved position, scroll to bottom
-        setTimeout(() => {
-          bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
-        setShouldAutoScroll(true);
+    if (lastConversationIdRef.current) {
+      const viewport = getScrollViewport();
+      if (viewport) {
+        const scrollTop = viewport.scrollTop;
+        chatCache.setScrollPosition(lastConversationIdRef.current, scrollTop);
       }
     }
   };
 
+  // Restore scroll position for current conversation
+  const restoreScrollPosition = (retryCount = 0) => {
+    if (!convId) return;
+    
+    const savedPosition = chatCache.getScrollPosition(convId);
+    const viewport = getScrollViewport();
+    
+    // If viewport not ready yet, retry a few times
+    if (!viewport && retryCount < 5) {
+      setTimeout(() => restoreScrollPosition(retryCount + 1), 50);
+      return;
+    }
+    
+    if (viewport && savedPosition !== null && savedPosition > 0) {
+      // Use double requestAnimationFrame to ensure content is rendered
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const viewport = getScrollViewport();
+          if (viewport) {
+            viewport.scrollTop = savedPosition;
+            setShouldAutoScroll(false);
+            console.log(`Restored scroll position for ${convId}: ${savedPosition}`);
+          }
+        });
+      });
+    } else if (viewport) {
+      // First time or no saved position, scroll to bottom
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+          setShouldAutoScroll(true);
+        });
+      });
+    }
+  };
+
   // Handle scroll events to track position  
-  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = () => {
     if (convId) {
-      const target = event.target as HTMLDivElement;
-      const { scrollTop, scrollHeight, clientHeight } = target;
+      const viewport = getScrollViewport();
+      if (!viewport) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
       const isNearBottom = scrollTop + clientHeight >= scrollHeight - 100;
       setShouldAutoScroll(isNearBottom);
       
       // Debounced save of scroll position to avoid excessive updates
-      clearTimeout((handleScroll as any).timeoutId);
-      (handleScroll as any).timeoutId = setTimeout(() => {
+      if (scrollDebounceRef.current) {
+        clearTimeout(scrollDebounceRef.current);
+      }
+      scrollDebounceRef.current = setTimeout(() => {
         chatCache.setScrollPosition(convId, scrollTop);
+        console.log(`Saved scroll position for ${convId}: ${scrollTop}`);
       }, 100);
     }
   };
@@ -123,8 +152,10 @@ export default function ChatView({
       const cachedMessages = chatCache.getMessages(convId);
       if (cachedMessages) {
         setMessages(cachedMessages);
-        // Restore scroll position after messages are set
-        setTimeout(restoreScrollPosition, 100);
+        // Restore scroll position after messages are set and rendered
+        requestAnimationFrame(() => {
+          restoreScrollPosition();
+        });
         
         // Start preloading adjacent conversations
         setTimeout(() => {
@@ -152,8 +183,10 @@ export default function ChatView({
         setMessages(uniqueMessages);
         console.log(uniqueMessages);
         
-        // Restore scroll position after messages are loaded
-        setTimeout(restoreScrollPosition, 150);
+        // Restore scroll position after messages are loaded and rendered
+        requestAnimationFrame(() => {
+          restoreScrollPosition();
+        });
         
         // Start preloading adjacent conversations
         setTimeout(() => {
@@ -174,12 +207,50 @@ export default function ChatView({
     void load();
   }, [convId]);
 
-  // Save scroll position when component unmounts
+  // Attach scroll event listener to viewport
+  useEffect(() => {
+    const attachScrollListener = () => {
+      const viewport = getScrollViewport();
+      if (viewport) {
+        viewport.addEventListener('scroll', handleScroll);
+        return () => viewport.removeEventListener('scroll', handleScroll);
+      }
+      return undefined;
+    };
+
+    // Try to attach immediately
+    let cleanup = attachScrollListener();
+
+    // If viewport not ready, try again after a short delay
+    if (!cleanup) {
+      const timeoutId = setTimeout(() => {
+        cleanup = attachScrollListener();
+      }, 100);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        if (cleanup) cleanup();
+      };
+    }
+
+    return cleanup;
+  }, [convId, messages.length]); // Re-attach when convId changes or messages load
+
+  // Save scroll position when component unmounts or conversation changes
   useEffect(() => {
     return () => {
-      if (convId && scrollAreaRef.current) {
-        const scrollTop = scrollAreaRef.current.scrollTop;
-        chatCache.setScrollPosition(convId, scrollTop);
+      // Clear any pending scroll save timeout
+      if (scrollDebounceRef.current) {
+        clearTimeout(scrollDebounceRef.current);
+      }
+      
+      if (convId) {
+        const viewport = getScrollViewport();
+        if (viewport) {
+          const scrollTop = viewport.scrollTop;
+          chatCache.setScrollPosition(convId, scrollTop);
+          console.log(`Saved scroll position on unmount for ${convId}: ${scrollTop}`);
+        }
       }
     };
   }, [convId]);
@@ -297,10 +368,12 @@ export default function ChatView({
 
   // Only auto-scroll when shouldAutoScroll is true (user is at bottom)
   useEffect(() => {
-    if (shouldAutoScroll && messages.length > 0) {
+    // Don't auto-scroll if we have a saved position
+    const savedPosition = convId ? chatCache.getScrollPosition(convId) : null;
+    if (shouldAutoScroll && messages.length > 0 && savedPosition === null) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, shouldAutoScroll]);
+  }, [messages, shouldAutoScroll, convId]);
 
   // Always scroll for streaming content
   useEffect(() => {
@@ -381,12 +454,11 @@ export default function ChatView({
           <MessageSkeleton />
         </div>
       ) : (
-        <ScrollArea className="h-full w-full rounded-md p-4 flex-1 overflow-y-auto space-y-2 no-scrollbar">
-          <div
-            ref={scrollAreaRef}
-            onScroll={handleScroll}
-            className="h-full w-full overflow-y-auto"
-          >
+        <ScrollArea 
+          ref={scrollViewportRef}
+          className="h-full w-full rounded-md p-4 flex-1 overflow-y-auto space-y-2 no-scrollbar"
+        >
+          <div className="h-full w-full">
           {messages.map((m) => (
           <div
             key={m.id}

@@ -75,6 +75,15 @@ class ChatCache {
     if (entry) {
       entry.scrollPosition = position;
       entry.lastScrollTime = Date.now();
+    } else {
+      // Create a minimal entry just for scroll position if messages aren't cached yet
+      this.cache.set(conversationId, {
+        messages: [],
+        lastFetched: Date.now(),
+        isComplete: false,
+        scrollPosition: position,
+        lastScrollTime: Date.now()
+      });
     }
   }
 
