@@ -1,5 +1,5 @@
-import { Calendar, Home, Inbox, Search, Settings, Plus, MoreHorizontal, Trash2, Archive, Share2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Settings, Plus, MoreHorizontal, Trash2, Archive, Share2, Search, X } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { listConversations, createConversation, deleteConversation, archiveConversation, getMessages, type Conversation } from "../lib/chat";
 import { chatCache } from "../lib/chat-cache";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -15,38 +15,9 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
-  SidebarSeparator,
   SidebarInput,
 } from "@/components/ui/sidebar";
 
-// Top application items (keep if needed elsewhere)
-const items = [
-  {
-    title: "Home",
-    url: "/dashboard",
-    icon: Home,
-  },
-  {
-    title: "Inbox",
-    url: "#",
-    icon: Inbox,
-  },
-  {
-    title: "Calendar",
-    url: "#",
-    icon: Calendar,
-  },
-  {
-    title: "Search",
-    url: "#",
-    icon: Search,
-  },
-  {
-    title: "Settings",
-    url: "/settings",
-    icon: Settings,
-  },
-];
 
 const bottomNav = [
   { title: "New Chat", url: "/dashboard", icon: Plus },
@@ -55,6 +26,16 @@ const bottomNav = [
 
 export function AppSidebar() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Filter conversations based on search query
+  const filteredConversations = conversations.filter(conversation => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return conversation.title.toLowerCase().includes(query);
+  });
+  
   const refresh = async () => {
     try {
       const list = await listConversations();
@@ -87,6 +68,7 @@ export function AppSidebar() {
     }
   };
   useEffect(() => { void refresh(); }, []);
+  
   // Fallback: periodically invoke backend to keep titles fresh (no event reliance)
   useEffect(() => {
     const tick = () => { if (document.visibilityState !== 'hidden') { void refresh(); } };
@@ -95,6 +77,24 @@ export function AppSidebar() {
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(id); window.removeEventListener('focus', tick); document.removeEventListener('visibilitychange', tick); };
   }, []);
+
+  // Keyboard shortcut to focus search input (Ctrl/Cmd + F)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      // Escape to clear search
+      if (event.key === 'Escape' && searchQuery) {
+        setSearchQuery("");
+        searchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchQuery]);
 
   const handleNewChat = async () => {
     // Get the currently selected model from localStorage
@@ -107,14 +107,42 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="flex items-start gap-2">
-        <SidebarInput placeholder="Search" />
+        <div className="relative w-full">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-white/50" />
+          <SidebarInput 
+            ref={searchInputRef}
+            placeholder="Search" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/50 hover:text-white/70 transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Recents</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            {searchQuery ? `Search Results` : "Recents"}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {conversations.map((c) => (
+              {filteredConversations.length === 0 && searchQuery.trim() !== "" ? (
+                <div className="px-3 py-2 text-sm text-white/60 text-center">
+                  No conversations found matching "{searchQuery}"
+                </div>
+              ) : filteredConversations.length === 0 && conversations.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-white/60 text-center">
+                  No conversations yet. Start a new chat!
+                </div>
+              ) : (
+                filteredConversations.map((c) => (
                 <SidebarMenuItem key={c.id}>
                   <div className="flex items-center justify-between gap-2">
                     <SidebarMenuButton asChild className="flex-1">
@@ -148,7 +176,8 @@ export function AppSidebar() {
                     </DropdownMenu>
                   </div>
                 </SidebarMenuItem>
-              ))}
+                ))
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

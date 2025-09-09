@@ -40,6 +40,20 @@ pub struct ListedModel {
     pub enabled: bool,
 }
 
+fn is_openrouter_model(model: &str) -> bool {
+    // OpenRouter models typically have format "provider/model" or "openrouter/auto"
+    // Check for common OpenRouter patterns
+    model.contains("openrouter") ||
+    model.contains("anthropic/") ||
+    model.contains("openai/") ||
+    model.contains("google/") ||
+    model.contains("meta-llama/") ||
+    model.contains("mistral/") ||
+    model.contains("cohere/") ||
+    // Add more provider prefixes as needed
+    (model.contains("/") && !model.contains(":")) // General provider/model format, excluding Ollama's model:tag format
+}
+
 #[tauri::command]
 pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Result<(), String> {
     let _ = dotenvy::dotenv();
@@ -96,7 +110,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
         let use_manual_streaming = model.starts_with("gemini") || 
                                   model.starts_with("gpt-") || 
                                   model.starts_with("claude-") || 
-                                  model.contains("openrouter") ||
+                                  is_openrouter_model(&model) ||
                                   model.starts_with("o1-") ||
                                   model.contains(":") || // Ollama models typically have format like "llama3.2:3b"
                                   model.starts_with("llama") ||
@@ -161,7 +175,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                         }
                     }
                 }
-            } else if model.contains("openrouter") {
+            } else if is_openrouter_model(&model) {
                 // OpenRouter provider
                 let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
                 
@@ -315,13 +329,52 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             complete_content: complete_content.clone(),
         });
 
-        // Handle conversation title generation (existing logic)
+        // Handle conversation title generation - generate immediately after first response
         if let Ok(conn) = get_conn(&app) {
             use rusqlite::OptionalExtension;
             let count: i64 = conn
                 .query_row("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", params![&conversation_id], |row| row.get(0))
                 .unwrap_or(0);
-            if count >= 6 {
+            
+            // Check current title to see if it's still default
+            let current_title: String = conn
+                .query_row("SELECT title FROM conversations WHERE id = ?", params![&conversation_id], |row| row.get(0))
+                .unwrap_or_else(|_| "New Chat".to_string());
+            
+            // Generate title immediately after first assistant response (count >= 2 means we have user + assistant)
+            if count >= 2 && (current_title == "New Chat" || current_title.is_empty()) {
+                let first_user: Option<String> = conn
+                    .query_row(
+                        "SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY datetime(created_at) ASC LIMIT 1",
+                        params![&conversation_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+
+                if let Some(initial) = first_user {
+                    let title_prompt = format!(
+                        "Generate a short, descriptive title (max 6 words) for this conversation based on the user's request. No quotes or trailing punctuation.\n\nUser message: {}",
+                        initial
+                    );
+                    
+                    // Use genai for title generation
+                    use genai::Client;
+                    use genai::chat::{ChatMessage, ChatRequest};
+                    let title_client = Client::default();
+                    let req = ChatRequest::new(vec![ChatMessage::user(&title_prompt)]);
+                    match title_client.exec_chat("gemini-1.5-flash", req, None).await {
+                        Ok(title_res) => {
+                            let mut new_title = title_res.first_text().unwrap_or("New Chat").trim().to_string();
+                            if new_title.ends_with('.') { new_title.pop(); }
+                            if new_title.is_empty() { new_title = "New Chat".to_string(); }
+                            let _ = conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![new_title, &conversation_id]);
+                        },
+                        Err(_) => { /* skip title generation on failure */ }
+                    }
+                }
+            } else if count >= 6 {
+                // Keep existing logic for retitling based on topic drift
                 let first_user: Option<String> = conn
                     .query_row(
                         "SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY datetime(created_at) ASC LIMIT 1",
@@ -338,12 +391,10 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                         complete_content
                     );
                     
-                    // Use genai for title generation regardless of the main model
                     use genai::Client;
                     use genai::chat::{ChatMessage, ChatRequest};
                     let title_client = Client::default();
-                    let mut req = ChatRequest::default();
-                    req = req.append_message(ChatMessage::user(&decide_prompt));
+                    let req = ChatRequest::new(vec![ChatMessage::user(&decide_prompt)]);
                     match title_client.exec_chat("gemini-1.5-flash", req, None).await {
                         Ok(decision_res) => {
                             let decision = decision_res.first_text().unwrap_or("").trim().to_string();
@@ -739,6 +790,34 @@ pub async fn get_adapter_models(adapter_kind: String) -> Result<Vec<String>, Str
             // Use our custom OllamaProvider for better integration
             let provider = OllamaProvider::new();
             provider.list_models().await
+        }
+        "OpenRouter" => {
+            // Use openrouter-rs for OpenRouter model fetching
+            let api_key = std::env::var("OPENROUTER_API_KEY")
+                .map_err(|_| "OpenRouter API key not found. Please set OPENROUTER_API_KEY environment variable.".to_string())?;
+            
+            if api_key.is_empty() {
+                return Err("OpenRouter API key is empty. Please provide a valid API key.".to_string());
+            }
+            
+            use openrouter_rs::OpenRouterClient;
+            
+            let client = OpenRouterClient::builder()
+                .api_key(&api_key)
+                .http_referer("https://tethra.com")
+                .x_title("Tethra AI Chat")
+                .build()
+                .map_err(|e| format!("Failed to create OpenRouter client: {}", e))?;
+            
+            match client.list_models().await {
+                Ok(models) => {
+                    let model_ids: Vec<String> = models.into_iter()
+                        .map(|model| model.id)
+                        .collect();
+                    Ok(model_ids)
+                },
+                Err(e) => Err(format!("Failed to fetch OpenRouter models: {}", e)),
+            }
         }
         _ => {
             // Use genai for other providers

@@ -1,5 +1,4 @@
 "use client"
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Window } from '@tauri-apps/api/window';
 const appWindow = new Window('tethra');
 

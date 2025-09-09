@@ -6,7 +6,7 @@ import { SettingsSection, Row } from "./_SettingsSection"
 
 type GeneralInfo = { app_version: string; app_data_dir: string; logs_dir: string }
 
-type AppSettings = { spell_check?: boolean | null; experimental?: boolean | null; huggingface_token?: string | null }
+type AppSettings = { experimental?: boolean | null }
 
 export default function GeneralTab(){
   const [info, setInfo] = useState<GeneralInfo | null>(null)
@@ -53,17 +53,6 @@ export default function GeneralTab(){
         </label>} />
       </SettingsSection>
 
-      <SettingsSection title="Other">
-        <Row left={<div className="text-sm">Spell Check</div>} right={<label className="inline-flex items-center cursor-pointer">
-          <input type="checkbox" className="sr-only peer" checked={!!settings.spell_check} onChange={(e)=>update({ spell_check: e.target.checked })} />
-          <div className="w-9 h-5 bg-white/10 peer-checked:bg-white/20 rounded-full relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white/80 after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
-        </label>} />
-        <Row left={<>
-          <div className="text-sm mb-1">HuggingFace Token</div>
-          <div className="text-xs opacity-70 mb-2">Your HuggingFace API token for accessing models.</div>
-          <input className="w-full bg-white/5 rounded px-2 py-1 text-xs border border-white/10" placeholder="hf_xxx" value={settings.huggingface_token ?? ''} onChange={(e)=>update({ huggingface_token: e.target.value })} />
-        </>} right={null} />
-      </SettingsSection>
     </div>
   )
 }

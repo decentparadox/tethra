@@ -79,6 +79,8 @@ export default function ProvidersTab() {
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [customModelInput, setCustomModelInput] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -102,6 +104,34 @@ export default function ProvidersTab() {
     try {
       const saved = await invoke<any>("update_settings", { update: patch });
       setSettings(saved);
+      
+      // Auto-load models if an API key was just set
+      if (active) {
+        const meta = providerMeta[active];
+        const oldKeyValue = (settings[meta.keyField] as string) ?? "";
+        const newKeyValue = (patch[meta.keyField] as string) ?? oldKeyValue;
+        
+        // If API key was added and we don't have models yet, auto-fetch them
+        if (!oldKeyValue && newKeyValue && newKeyValue.trim().length > 0) {
+          const currentModels = (saved[meta.modelsField] as string[] | null) ?? [];
+          if (currentModels.length === 0) {
+            try {
+              const fetchedModelsList = await invoke<string[]>("get_adapter_models", { adapterKind: active });
+              if (fetchedModelsList.length > 0) {
+                // Auto-add all fetched models
+                await invoke<any>("update_settings", { 
+                  update: { [meta.modelsField]: fetchedModelsList } as any 
+                });
+                // Refresh settings to get the updated models
+                const finalSettings = await invoke<any>("get_settings");
+                setSettings(finalSettings);
+              }
+            } catch (error) {
+              console.log("Failed to auto-fetch models:", error);
+            }
+          }
+        }
+      }
     } catch {}
   };
 
@@ -135,6 +165,14 @@ export default function ProvidersTab() {
 
   const addModel = () => {
     if (!active) return;
+    
+    // For OpenRouter, use custom input UI instead of prompt
+    if (active === "OpenRouter") {
+      setShowCustomInput(true);
+      return;
+    }
+    
+    // For other providers, use prompt
     const name = prompt("Add model id (e.g. gemini-1.5-flash)")?.trim();
     if (!name) return;
     const set = Array.from(new Set([...(models || []), name]));
@@ -154,6 +192,23 @@ export default function ProvidersTab() {
     const set = (models || []).filter((m) => m !== id);
     const meta = providerMeta[active];
     void update({ [meta.modelsField]: set } as any);
+  };
+
+  const addCustomModel = () => {
+    if (!active || !customModelInput.trim()) return;
+    const meta = providerMeta[active];
+    const models = (settings[meta.modelsField] as string[] | null) ?? [];
+    const newModel = customModelInput.trim();
+    
+    // Check if model already exists
+    if (models.includes(newModel)) {
+      return; // Model already exists, don't add duplicate
+    }
+    
+    const updatedModels = [...models, newModel];
+    update({ [meta.modelsField]: updatedModels } as any);
+    setCustomModelInput("");
+    setShowCustomInput(false);
   };
 
   const providerToIcon = (p: ProviderKey): ModelType => {
@@ -325,6 +380,21 @@ export default function ProvidersTab() {
                       </div>
                     )}
                   </div>
+                  {fetchedModels.filter((model) => !models.includes(model)).length > 0 && hasApiKey && (
+                    <div className="mt-2 flex justify-center">
+                      <button
+                        className="px-3 py-1 text-xs rounded-md bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 text-blue-200"
+                        onClick={() => {
+                          const newModels = fetchedModels.filter((model) => !models.includes(model));
+                          const set = Array.from(new Set([...(models || []), ...newModels]));
+                          const meta = providerMeta[active!];
+                          void update({ [meta.modelsField]: set } as any);
+                        }}
+                      >
+                        Add All Available Models ({fetchedModels.filter((model) => !models.includes(model)).length})
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -355,6 +425,50 @@ export default function ProvidersTab() {
                     </div>
                   </div>
                 ))
+              )}
+
+              {/* Custom model input for OpenRouter */}
+              {active === "OpenRouter" && showCustomInput && (
+                <div className="px-4 py-3 border-t border-white/10 bg-white/5">
+                  <div className="text-sm font-medium mb-2 text-white/80">Add Custom Model</div>
+                  <div className="text-xs text-white/60 mb-3">
+                    Enter a model ID from OpenRouter (e.g., "anthropic/claude-3.5-sonnet", "openai/gpt-4o", "meta-llama/llama-3.1-70b-instruct")
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customModelInput}
+                      onChange={(e) => setCustomModelInput(e.target.value)}
+                      placeholder="provider/model-name"
+                      className="flex-1 bg-white/5 rounded px-3 py-2 text-sm border border-white/10"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          addCustomModel();
+                        } else if (e.key === "Escape") {
+                          setShowCustomInput(false);
+                          setCustomModelInput("");
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <button
+                      onClick={addCustomModel}
+                      disabled={!customModelInput.trim()}
+                      className="px-3 py-2 text-sm rounded bg-blue-500/20 border border-blue-500/30 hover:bg-blue-500/30 text-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCustomInput(false);
+                        setCustomModelInput("");
+                      }}
+                      className="px-3 py-2 text-sm rounded bg-white/10 border border-white/20 hover:bg-white/15"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

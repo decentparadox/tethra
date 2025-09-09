@@ -7,9 +7,9 @@ export default function GlobalShortcuts() {
     const onKeyDown = (e: KeyboardEvent) => {
       const isMod = e.ctrlKey || e.metaKey;
       if (!isMod) return;
-      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
-      const isTyping = tag === 'input' || tag === 'textarea' || (e.target as HTMLElement | null)?.isContentEditable;
-      // Still allow shortcuts while typing; comment out next line to disable while typing
+      // Still allow shortcuts while typing; uncomment next lines to disable while typing
+      // const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      // const isTyping = tag === 'input' || tag === 'textarea' || (e.target as HTMLElement | null)?.isContentEditable;
       // if (isTyping) return;
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();

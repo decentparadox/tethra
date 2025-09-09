@@ -2,6 +2,20 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
 use tauri::Manager;
 
+fn is_openrouter_model(model: &str) -> bool {
+    // OpenRouter models typically have format "provider/model" or "openrouter/auto"
+    // Check for common OpenRouter patterns
+    model.contains("openrouter") ||
+    model.contains("anthropic/") ||
+    model.contains("openai/") ||
+    model.contains("google/") ||
+    model.contains("meta-llama/") ||
+    model.contains("mistral/") ||
+    model.contains("cohere/") ||
+    // Add more provider prefixes as needed
+    (model.contains("/") && !model.contains(":")) // General provider/model format, excluding Ollama's model:tag format
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppearanceSettings {
     pub theme: Option<String>,          // "system" | "light" | "dark"
@@ -146,7 +160,7 @@ pub fn setup_provider_env_for_model(app: &tauri::AppHandle, model: &str) {
     } else if model.contains("groq") || model.starts_with("gemma-") || model.starts_with("llama-") {
         if let Some(k) = settings.groq_api_key.clone() { std::env::set_var("GROQ_API_KEY", k); }
         if let Some(url) = settings.groq_base_url { std::env::set_var("GROQ_BASE_URL", url); }
-    } else if model.contains("openrouter") || model.contains(":") {
+    } else if is_openrouter_model(model) {
         if let Some(k) = settings.openrouter_api_key.clone() { std::env::set_var("OPENROUTER_API_KEY", k); }
         if let Some(url) = settings.openrouter_base_url { std::env::set_var("OPENROUTER_BASE_URL", url); }
     }

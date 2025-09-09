@@ -1,45 +1,12 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import HardwareTab from "./_HardwareTab";
 import ProvidersTab from "./_ProvidersTab";
 import GeneralTab from "./_GeneralTab";
 import AppearanceTab from "./_AppearanceTab";
 
-type HardwareInfo = {
-  os_name: string;
-  os_version?: string | null;
-  cpu: { model: string; architecture: string; physical_cores?: number | null };
-  memory: { total_gb: number; available_gb: number; used_percent: number };
-  gpus: Array<{ name: string; vram_mb?: number | null }>;
-}
-
-type UsageSnapshot = { cpu_percent: number; mem_used_percent: number; available_gb: number; total_gb: number }
 
 export default function SettingsTabs() {
-  const [hw, setHw] = useState<HardwareInfo | null>(null)
-  const [usage, setUsage] = useState<UsageSnapshot | null>(null)
-  useEffect(() => {
-    (async () => {
-      try {
-        // @ts-ignore invoke exists in tauri runtime
-        const data = await invoke<HardwareInfo>("get_hardware_info")
-        setHw(data)
-      } catch {}
-    })()
-  }, [])
-  useEffect(()=>{
-    let id: any
-    const tick = async () => {
-      try {
-        const snap = await invoke<UsageSnapshot>("get_usage_snapshot")
-        setUsage(snap)
-      } catch {}
-      id = setTimeout(tick, 1000)
-    }
-    tick()
-    return () => { if (id) clearTimeout(id) }
-  }, [])
+  // Hardware info and usage monitoring removed as they were unused
   return (
     <div className="flex w-full h-full text-white border-t border-border/70 no-scrollbar">
       
@@ -80,12 +47,12 @@ export default function SettingsTabs() {
               <h2 className="text-lg font-mondwest">Analytics</h2>
               <div className="space-y-2 text-sm opacity-90">
                 <div className="font-medium">Help us improve</div>
-                <p>To help us improve Jan, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.</p>
+                <p>To help us improve Tethra, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.</p>
               </div>
               <div className="my-2 border-t border-white/10" />
               <div className="space-y-2 text-sm opacity-90">
                 <p>You have full control over your data. Learn more in our Privacy Policy.</p>
-                <p>To improve Jan, we need to understand how it's used—but only with your help. You can change this setting anytime.</p>
+                <p>To improve Tethra, we need to understand how it's used—but only with your help. You can change this setting anytime.</p>
                 <p>Your choice here won't change our core privacy promises:</p>
                 <ul className="list-disc pl-6 space-y-1">
                   <li><span className="font-medium">Your conversations stay private and on your device</span></li>

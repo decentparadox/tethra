@@ -3,12 +3,10 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -42,13 +40,13 @@ const SelfHostFormSchema = z.object({
 
 export default function authKeyTab() {
   const tetherform = useForm<z.infer<typeof TetherFormSchema>>({
-    resolver: zodResolver(TetherFormSchema),
+    resolver: zodResolver(TetherFormSchema as any),
     defaultValues: {
       apiKey: "",
     },
   });
   const selfhostform = useForm<z.infer<typeof SelfHostFormSchema>>({
-    resolver: zodResolver(SelfHostFormSchema),
+    resolver: zodResolver(SelfHostFormSchema as any),
     defaultValues: {
       apiKey: "",
       apiUrl: "",

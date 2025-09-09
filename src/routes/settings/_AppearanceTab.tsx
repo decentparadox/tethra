@@ -8,6 +8,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { CodeBlock, CodeBlockCopyButton } from "@/components/ui/code-block";
 
 type Appearance = {
   theme?: string | null;
@@ -15,11 +16,6 @@ type Appearance = {
   code_show_line_numbers?: boolean | null;
   code_theme?: string | null;
   chat_width?: string | null;
-  window_bg?: string | null;
-  app_bg?: string | null;
-  primary_color?: string | null;
-  accent_color?: string | null;
-  destructive_color?: string | null;
 };
 
 type AppSettings = { appearance?: Appearance | null };
@@ -42,29 +38,8 @@ function applyAppearance(appearance?: Appearance | null) {
   window.dispatchEvent(
     new CustomEvent("code-theme-changed", { detail: codeTheme })
   );
-  if (appearance?.window_bg)
-    root.style.setProperty("--sidebar", appearance.window_bg);
-  if (appearance?.app_bg)
-    root.style.setProperty("--background", appearance.app_bg);
-  if (appearance?.primary_color)
-    root.style.setProperty("--primary", appearance.primary_color);
-  if (appearance?.accent_color)
-    root.style.setProperty("--accent", appearance.accent_color);
-  if (appearance?.destructive_color)
-    root.style.setProperty("--destructive", appearance.destructive_color);
 }
 
-const palette = [
-  { label: "Black", value: "#000000" },
-  { label: "White", value: "#ffffff" },
-  { label: "Blue", value: "#3b82f6" },
-  { label: "Violet", value: "#8b5cf6" },
-  { label: "Red", value: "#ef4444" },
-  { label: "Orange", value: "#f59e0b" },
-  { label: "Green", value: "#22c55e" },
-  { label: "Lime", value: "#a3e635" },
-  { label: "Purple", value: "#9333ea" },
-];
 
 export default function AppearanceTab() {
   const [settings, setSettings] = useState<AppSettings>({});
@@ -105,11 +80,6 @@ export default function AppearanceTab() {
   const chat = settings.appearance?.chat_width ?? "compact";
   const showLines = settings.appearance?.code_show_line_numbers ?? true;
   const codeTheme = settings.appearance?.code_theme ?? "github-dark";
-  const windowBg = settings.appearance?.window_bg ?? "#000000";
-  const appBg = settings.appearance?.app_bg ?? "#000000";
-  const primary = settings.appearance?.primary_color ?? "#3b82f6";
-  const accent = settings.appearance?.accent_color ?? "#1d4ed8";
-  const destructive = settings.appearance?.destructive_color ?? "#ef4444";
 
   return (
     <div className="flex flex-col gap-4">
@@ -159,132 +129,6 @@ export default function AppearanceTab() {
         <Row
           left={
             <>
-              <div className="font-mondwest mb-1">Window Background</div>
-              <div className="text-xs opacity-70">
-                Set the app window's background color.
-              </div>
-            </>
-          }
-          right={
-            <select
-              className="bg-white/10 border border-white/10 rounded px-2 py-1 text-xs"
-              value={windowBg}
-              onChange={(e) => updateAppearance({ window_bg: e.target.value })}
-            >
-              {palette.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
-
-        <Row
-          left={
-            <>
-              <div className="font-mondwest mb-1">App Main View</div>
-              <div className="text-xs opacity-70">
-                Set the main content area's background color.
-              </div>
-            </>
-          }
-          right={
-            <select
-              className="bg-white/10 border border-white/10 rounded px-2 py-1 text-xs"
-              value={appBg}
-              onChange={(e) => updateAppearance({ app_bg: e.target.value })}
-            >
-              {[palette[0], palette[1]].map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
-
-        <Row
-          left={
-            <>
-              <div className="font-mondwest mb-1">Primary</div>
-              <div className="text-xs opacity-70">
-                Set the primary color for UI components.
-              </div>
-            </>
-          }
-          right={
-            <select
-              className="bg-white/10 border border-white/10 rounded px-2 py-1 text-xs"
-              value={primary}
-              onChange={(e) =>
-                updateAppearance({ primary_color: e.target.value })
-              }
-            >
-              {palette.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
-
-        <Row
-          left={
-            <>
-              <div className="font-mondwest mb-1">Accent</div>
-              <div className="text-xs opacity-70">
-                Set the accent color for UI highlights.
-              </div>
-            </>
-          }
-          right={
-            <select
-              className="bg-white/10 border border-white/10 rounded px-2 py-1 text-xs"
-              value={accent}
-              onChange={(e) =>
-                updateAppearance({ accent_color: e.target.value })
-              }
-            >
-              {palette.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
-
-        <Row
-          left={
-            <>
-              <div className="font-mondwest mb-1">Destructive</div>
-              <div className="text-xs opacity-70">
-                Set the color for destructive actions.
-              </div>
-            </>
-          }
-          right={
-            <select
-              className="bg-white/10 border border-white/10 rounded px-2 py-1 text-xs"
-              value={destructive}
-              onChange={(e) =>
-                updateAppearance({ destructive_color: e.target.value })
-              }
-            >
-              {palette.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          }
-        />
-
-        <Row
-          left={
-            <>
               <div className="font-mondwest mb-1">Chat Width</div>
               <div className="text-xs opacity-70">
                 Customize the width of the chat view.
@@ -302,6 +146,83 @@ export default function AppearanceTab() {
             </select>
           }
         />
+
+
+        <Row
+          left={
+            <>
+              <div className="font-mondwest mb-1">Reset to Default</div>
+              <div className="text-xs opacity-70">
+                Reset all appearance settings to default.
+              </div>
+            </>
+          }
+          right={
+            <button
+              className="px-3 py-1 text-xs rounded-md bg-red-500/20 border border-red-500/30"
+              onClick={reset}
+            >
+              Reset
+            </button>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Code Block">
+        <Row
+          left={
+            <>
+              <div className="my-auto">Choose a syntax highlighting style.</div>
+            </>
+          }
+          right={
+            <Select
+              value={codeTheme}
+              onValueChange={(v) => updateAppearance({ code_theme: v })}
+            >
+              <SelectTrigger className="w-48 bg-white/10 border border-white/10">
+                <SelectValue placeholder="Theme" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="github-dark">GitHub Dark</SelectItem>
+                <SelectItem value="github-light">GitHub Light</SelectItem>
+                <SelectItem value="monokai">Monokai</SelectItem>
+                <SelectItem value="dracula">Dracula</SelectItem>
+                <SelectItem value="one-dark-pro">One Dark Pro</SelectItem>
+                <SelectItem value="gruvbox-dark-medium">Gruvbox Dark</SelectItem>
+                <SelectItem value="gruvbox-light-medium">Gruvbox Light</SelectItem>
+                <SelectItem value="nord">Nord</SelectItem>
+                <SelectItem value="material-theme-darker">Material Dark</SelectItem>
+                <SelectItem value="material-theme-lighter">Material Light</SelectItem>
+                <SelectItem value="night-owl">Night Owl</SelectItem>
+                <SelectItem value="tokyo-night">Tokyo Night</SelectItem>
+                <SelectItem value="catppuccin-mocha">Catppuccin Mocha</SelectItem>
+                <SelectItem value="catppuccin-latte">Catppuccin Latte</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+        />
+        
+        {/* Preview Section */}
+        <div className="px-4 py-3">
+          <div className="font-mondwest mb-2 text-sm">Preview</div>
+          <CodeBlock
+            code={`// Example code for preview
+function greeting(name: string) {
+  return \`Hello, \${name}!\`;
+}
+
+// Call the function
+const message = greeting('Tethra');
+console.log(message);  // Outputs: Hello, Tethra!`}
+            language="typescript"
+            showLineNumbers={showLines}
+            theme={codeTheme}
+            className="text-sm"
+          >
+            <CodeBlockCopyButton />
+          </CodeBlock>
+        </div>
 
         <Row
           left={<div className="text-sm">Show Line Numbers</div>}
@@ -321,37 +242,18 @@ export default function AppearanceTab() {
         />
 
         <Row
-          left={<div className="text-sm">Syntax Theme</div>}
-          right={
-            <Select
-              value={codeTheme}
-              onValueChange={(v) => updateAppearance({ code_theme: v })}
-            >
-              <SelectTrigger className="w-48 bg-white/10 border border-white/10">
-                <SelectValue placeholder="Theme" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="github-dark">GitHub Dark</SelectItem>
-                <SelectItem value="github">GitHub Light</SelectItem>
-                <SelectItem value="atom-one-dark">Atom One Dark</SelectItem>
-              </SelectContent>
-            </Select>
-          }
-        />
-
-        <Row
           left={
             <>
-              <div className="font-mondwest mb-1">Reset to Default</div>
+              <div className="font-mondwest mb-1">Reset Code Block Style</div>
               <div className="text-xs opacity-70">
-                Reset all appearance settings to default.
+                Reset code block style to default.
               </div>
             </>
           }
           right={
             <button
               className="px-3 py-1 text-xs rounded-md bg-red-500/20 border border-red-500/30"
-              onClick={reset}
+              onClick={() => updateAppearance({ code_theme: "github-dark", code_show_line_numbers: true })}
             >
               Reset
             </button>

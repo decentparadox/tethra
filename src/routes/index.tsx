@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import logo from '../logo.svg'
 import AuthKeyTab from "../components/authKeyTab"
 export const Route = createFileRoute('/')({
   component: App,

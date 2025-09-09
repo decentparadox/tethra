@@ -9,7 +9,40 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneDark,
   oneLight,
+  dracula,
+  materialDark,
+  materialLight,
+  nord,
+  nightOwl,
+  gruvboxDark,
+  gruvboxLight,
+  vscDarkPlus,
+  tomorrow,
+  atomDark,
+  base16AteliersulphurpoolLight,
+  okaidia,
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+// Theme mapping function
+const getThemeByName = (themeName: string) => {
+  switch (themeName) {
+    case 'github-dark': return oneDark;
+    case 'github-light': return oneLight;
+    case 'dracula': return dracula;
+    case 'material-theme-darker': return materialDark;
+    case 'material-theme-lighter': return materialLight;
+    case 'nord': return nord;
+    case 'night-owl': return nightOwl;
+    case 'gruvbox-dark-medium': return gruvboxDark;
+    case 'gruvbox-light-medium': return gruvboxLight;
+    case 'monokai': return okaidia; // Monokai-like theme
+    case 'one-dark-pro': return vscDarkPlus;
+    case 'tokyo-night': return tomorrow;
+    case 'catppuccin-mocha': return atomDark;
+    case 'catppuccin-latte': return base16AteliersulphurpoolLight;
+    default: return oneDark;
+  }
+};
 
 type CodeBlockContextType = {
   code: string;
@@ -23,6 +56,7 @@ export type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: string;
   showLineNumbers?: boolean;
+  theme?: string;
   children?: ReactNode;
 };
 
@@ -30,10 +64,16 @@ export const CodeBlock = ({
   code,
   language,
   showLineNumbers = false,
+  theme,
   className,
   children,
   ...props
-}: CodeBlockProps) => (
+}: CodeBlockProps) => {
+  // Get the current theme from CSS variables or use the passed theme
+  const currentTheme = theme || getComputedStyle(document.documentElement).getPropertyValue('--code-theme').trim() || 'github-dark';
+  const selectedTheme = getThemeByName(currentTheme);
+
+  return (
   <CodeBlockContext.Provider value={{ code }}>
     <div
       className={cn(
@@ -44,7 +84,7 @@ export const CodeBlock = ({
     >
       <div className="relative">
         <SyntaxHighlighter
-          className="overflow-hidden dark:hidden"
+          className="overflow-hidden"
           codeTagProps={{
             className: 'font-mono text-sm',
           }}
@@ -52,8 +92,7 @@ export const CodeBlock = ({
             margin: 0,
             padding: '1rem',
             fontSize: '0.875rem',
-            background: 'hsl(var(--background))',
-            color: 'hsl(var(--foreground))',
+            background: 'transparent',
           }}
           language={language}
           lineNumberStyle={{
@@ -62,30 +101,7 @@ export const CodeBlock = ({
             minWidth: '2.5rem',
           }}
           showLineNumbers={showLineNumbers}
-          style={oneLight}
-        >
-          {code}
-        </SyntaxHighlighter>
-        <SyntaxHighlighter
-          className="hidden overflow-hidden dark:block"
-          codeTagProps={{
-            className: 'font-mono text-sm',
-          }}
-          customStyle={{
-            margin: 0,
-            padding: '1rem',
-            fontSize: '0.875rem',
-            background: 'hsl(var(--background))',
-            color: 'hsl(var(--foreground))',
-          }}
-          language={language}
-          lineNumberStyle={{
-            color: 'hsl(var(--muted-foreground))',
-            paddingRight: '1rem',
-            minWidth: '2.5rem',
-          }}
-          showLineNumbers={showLineNumbers}
-          style={oneDark}
+          style={selectedTheme}
         >
           {code}
         </SyntaxHighlighter>
@@ -97,7 +113,8 @@ export const CodeBlock = ({
       </div>
     </div>
   </CodeBlockContext.Provider>
-);
+  );
+};
 
 export type CodeBlockCopyButtonProps = ComponentProps<typeof Button> & {
   onCopy?: () => void;

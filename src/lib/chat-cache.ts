@@ -4,8 +4,6 @@ interface CacheEntry {
   messages: Message[];
   lastFetched: number;
   isComplete: boolean;
-  scrollPosition?: number;
-  lastScrollTime?: number;
 }
 
 class ChatCache {
@@ -69,30 +67,7 @@ class ChatCache {
     }
   }
 
-  // Save scroll position for a conversation
-  setScrollPosition(conversationId: string, position: number) {
-    const entry = this.cache.get(conversationId);
-    if (entry) {
-      entry.scrollPosition = position;
-      entry.lastScrollTime = Date.now();
-    }
-  }
 
-  // Get saved scroll position
-  getScrollPosition(conversationId: string): number | null {
-    const entry = this.cache.get(conversationId);
-    return entry?.scrollPosition ?? null;
-  }
-
-  // Check if we should scroll to bottom (new messages or first time)
-  shouldScrollToBottom(conversationId: string, messagesLength: number): boolean {
-    const entry = this.cache.get(conversationId);
-    if (!entry || !entry.scrollPosition) return true;
-    
-    // If messages length changed significantly, probably new messages
-    const messageCountDiff = messagesLength - entry.messages.length;
-    return messageCountDiff > 0;
-  }
 
   // Check if we have any cached data for a conversation
   hasData(conversationId: string): boolean {
