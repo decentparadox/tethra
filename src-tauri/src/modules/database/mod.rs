@@ -14,6 +14,7 @@ pub struct Conversation {
     pub model: Option<String>,
 }
 
+// Legacy Message struct for backward compatibility
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
@@ -21,6 +22,26 @@ pub struct Message {
     pub role: String, // "user" | "assistant"
     pub content: String,
     pub created_at: String,
+}
+
+// AI SDK compatible message struct
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIMessage {
+    pub id: String,
+    pub role: String, // "user" | "assistant" | "system"
+    pub parts: Vec<MessagePart>,
+    pub conversation_id: String,
+    pub created_at: String,
+}
+
+// Message part for multimodal content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessagePart {
+    #[serde(rename = "type")]
+    pub part_type: String, // "text" | "image" | "step-start" | etc.
+    pub text: Option<String>,
+    pub image: Option<String>,
+    pub state: Option<String>, // For assistant messages, e.g. "done"
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -34,6 +55,21 @@ pub struct AddMessageInput {
     pub conversation_id: String, 
     pub role: String, 
     pub content: String 
+}
+
+// AI SDK compatible message input
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddAIMessageInput {
+    pub conversation_id: String,
+    pub role: String,
+    pub content: serde_json::Value // Can be string or array of parts
+}
+
+// Complete message data input for storing full AI SDK messages
+#[derive(Debug, Clone, Deserialize)]
+pub struct SaveCompleteMessageInput {
+    pub conversation_id: String,
+    pub message: serde_json::Value // Full AI SDK message object
 }
 
 pub fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -251,4 +287,111 @@ pub async fn db_get_conversation(app: tauri::AppHandle, conversation_id: String)
         return Ok(Conversation { id, title, created_at, archived, model });
     }
     Err("conversation not found".into())
+}
+
+// AI SDK compatible functions
+#[tauri::command]
+pub async fn db_get_ai_messages(app: tauri::AppHandle, conversation_id: String) -> Result<Vec<serde_json::Value>, String> {
+    let conn = get_conn(&app)?;
+    
+    // First, check total message count in database
+    let mut count_stmt = conn.prepare("SELECT COUNT(*) FROM messages WHERE conversation_id = ?").map_err(|e| e.to_string())?;
+    let _count: i64 = count_stmt.query_row([conversation_id.clone()], |row| row.get(0)).map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn.prepare("SELECT content FROM messages WHERE conversation_id = ? ORDER BY datetime(created_at) ASC").map_err(|e| e.to_string())?;
+
+    let mut messages = Vec::new();
+    let rows = stmt.query_map([conversation_id.clone()], |row| {
+        let content_str: String = row.get(0)?;
+        Ok(content_str)
+    }).map_err(|e| e.to_string())?;
+
+    for row_result in rows {
+        let content_str = row_result.map_err(|e| e.to_string())?;
+        
+        // Parse as JSON (AI SDK message format)
+        match serde_json::from_str::<serde_json::Value>(&content_str) {
+            Ok(json_message) => {
+                messages.push(json_message);
+            },
+            Err(_e) => {
+            }
+        }
+    }
+
+    Ok(messages)
+}
+
+#[tauri::command]
+pub async fn db_add_ai_message(app: tauri::AppHandle, input: AddAIMessageInput) -> Result<AIMessage, String> {
+    let conn = get_conn(&app)?;
+    let id = format!("{}", uuid());
+    let created_at = Utc::now().to_rfc3339();
+
+    // Construct the full AI SDK message structure
+    let parts = match &input.content {
+        serde_json::Value::String(text) => vec![MessagePart {
+            part_type: "text".to_string(),
+            text: Some(text.clone()),
+            image: None,
+            state: None,
+        }],
+        _ => vec![MessagePart {
+            part_type: "text".to_string(),
+            text: Some(serde_json::to_string(&input.content).unwrap_or_default()),
+            image: None,
+            state: None,
+        }],
+    };
+
+    let message = AIMessage {
+        id: id.clone(),
+        role: input.role.clone(),
+        parts,
+        conversation_id: input.conversation_id.clone(),
+        created_at: created_at.clone(),
+    };
+
+    // Serialize the full message structure
+    let message_json = serde_json::to_string(&message)
+        .map_err(|e| format!("Failed to serialize message: {}", e))?;
+
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        params![id, input.conversation_id, input.role, message_json, created_at],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(message)
+}
+
+#[tauri::command]
+pub async fn db_save_complete_message(app: tauri::AppHandle, input: SaveCompleteMessageInput) -> Result<(), String> {
+    let conn = get_conn(&app)?;
+
+    // Add conversation_id and created_at to the message if not present
+    let mut message_with_meta = input.message.clone();
+    if !message_with_meta["conversation_id"].is_string() {
+        message_with_meta["conversation_id"] = serde_json::Value::String(input.conversation_id.clone());
+    }
+    if !message_with_meta["created_at"].is_string() {
+        message_with_meta["created_at"] = serde_json::Value::String(chrono::Utc::now().to_rfc3339());
+    }
+
+    // Store the complete message as JSON
+    let message_json = serde_json::to_string(&message_with_meta)
+        .map_err(|e| format!("Failed to serialize message: {}", e))?;
+
+    // Extract values for database insertion
+    let message_id = message_with_meta["id"].as_str().unwrap_or("unknown");
+    let role = message_with_meta["role"].as_str().unwrap_or("unknown");
+    let default_created_at = chrono::Utc::now().to_rfc3339();
+    let created_at = message_with_meta["created_at"].as_str().unwrap_or(&default_created_at);
+
+    // Insert the message
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        params![message_id, input.conversation_id, role, message_json, created_at],
+    ).map_err(|e| format!("Failed to save message: {}", e))?;
+
+    Ok(())
 }

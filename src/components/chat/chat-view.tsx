@@ -2,32 +2,47 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  addMessage,
   createConversation,
-  getMessages,
-  streamChat,
   listChatModels,
-  type Message,
+  getMessages,
+  saveCompleteMessage,
+  getConversation,
   type ListedModel,
 } from "../../lib/chat";
-import { chatCache } from "../../lib/chat-cache";
-import { listen } from "@tauri-apps/api/event";
-import { Send, Copy, RefreshCw, Mic, Camera, MapPin } from "lucide-react";
+import { generateTitle, detectContextChange } from "../../lib/generate-title";
+import { Send, Mic as MicIcon,Globe as GlobeIcon, Camera, MapPin } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Response } from "@/components/response";
-import { TextShimmer } from "@/components/ui/text-shimmer";
 import { MessageSkeleton } from "@/components/ui/message-skeleton";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 import { StickToBottom, useStickToBottom } from "use-stick-to-bottom";
 
-type SpeedMap = Record<string, number>;
+import { useChat as useCustomChat } from "@/hooks/use-chat";
+import { AIMessage } from "@/components/ai-message";
+import { UserMessage } from "@/components/user-message";
+import { generateUUID } from "@/lib/utils";
 
-// Streaming message interface
-interface StreamingMessage extends Message {
-  isStreaming?: boolean;
-  streamingContent?: string;
-}
+import {
+  PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputAttachment,
+  PromptInputAttachments,
+  PromptInputBody,
+  PromptInputButton,
+  type PromptInputMessage,
+  PromptInputModelSelect,
+  PromptInputModelSelectContent,
+  PromptInputModelSelectItem,
+  PromptInputModelSelectTrigger,
+  PromptInputModelSelectValue,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputToolbar,
+  PromptInputTools,
+} from '@/components/ai-elements/prompt-input';
 
 export default function ChatView({
   conversationId,
@@ -35,33 +50,217 @@ export default function ChatView({
   conversationId?: string;
 }) {
   const [convId, setConvId] = useState<string | undefined>(conversationId);
-  const [messages, setMessages] = useState<StreamingMessage[]>([]);
+
+  // Update convId when conversationId prop changes
+  useEffect(() => {
+    setConvId(conversationId);
+  }, [conversationId]);
   const [input, setInput] = useState("");
   const [models, setModels] = useState<ListedModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(
     undefined
   );
+  const [dbMessages, setDbMessages] = useState<any[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const streamStartAtRef = useRef<number | null>(null);
-  const [speeds, setSpeeds] = useState<SpeedMap>({});
-  const [currentStreamingMessageId, setCurrentStreamingMessageId] = useState<
-    string | null
-  >(null);
+  const [speeds] = useState<Record<string, number>>({});
   const lastConversationIdRef = useRef<string | undefined>(conversationId);
+    const [useMicrophone, setUseMicrophone] = useState<boolean>(false);
+  const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
   const mounted = useRef(false);
   const ref = useRef<VirtualizerHandle>(null);
   const instance = useStickToBottom({
     initial: "instant",
     resize: "instant",
   });
+  const savedMessageIdsRef = useRef<Set<string>>(new Set());
+  const titleGeneratedRef = useRef<boolean>(false);
+  const messagesSinceLastTitleUpdateRef = useRef<number>(0);
+  const lastTitleUpdateRef = useRef<number>(Date.now());
+
+  // AI SDK integration - using dynamically selected model
+  const currentModel = selectedModel || "gemini-2.0-flash";
+
+  // Initialize appropriate provider and create model instance
+  const [model, setModel] = useState<any>(null);
+
+  useEffect(() => {
+    const initializeModel = async () => {
+      try {
+        const { getProviderFromModel } = await import("@/components/providers");
+
+        // Check if this is an Ollama model
+        const isOllamaModel = currentModel.includes(":") ||
+                             currentModel.startsWith("llama") ||
+                             currentModel.startsWith("qwen") ||
+                             currentModel.startsWith("codellama");
+
+        if (isOllamaModel) {
+          // For Ollama models, create a simple model object that will be detected by CustomChatTransport
+          setModel({ modelId: currentModel, isOllama: true });
+          return;
+        }
+
+        // For other models, use the appropriate AI SDK provider
+        const providerName = getProviderFromModel(currentModel);
+        const { PROVIDERS } = await import("@/components/providers");
+
+        const provider = PROVIDERS[providerName];
+        if (provider) {
+          await provider.initialize();
+          const modelInstance = provider.getInstance(currentModel);
+          setModel(modelInstance);
+        } else {
+          console.error("No provider found for model:", currentModel);
+        }
+      } catch (error) {
+        console.error("Failed to initialize model:", error);
+      }
+    };
+
+    initializeModel();
+  }, [currentModel]);
+  
+  // Use AI SDK only for sending new messages, not for managing message history
+  const { messages: newMessages, sendMessage, status } = useCustomChat(model, {
+    id: convId,
+    experimental_throttle: 100,
+    generateId: generateUUID,
+  });
+
+
+  // Function to load messages directly from database
+  const loadMessagesFromDb = async () => {
+    if (!convId) {
+      setDbMessages([]);
+      return;
+    }
+
+    try {
+      setIsLoadingMessages(true);
+      const existingMessages = await getMessages(convId);
+      setDbMessages(existingMessages);
+      setIsLoadingMessages(false);
+    } catch (error) {
+      console.error("Failed to load messages from database:", error);
+      setIsLoadingMessages(false);
+    }
+  };
+
+  // Save new messages as they complete
+  useEffect(() => {
+    const saveNewMessages = async () => {
+      if (!convId || newMessages.length === 0) {
+        return;
+      }
+      
+      let savedAny = false;
+      let isFirstUserMessage = false;
+      
+      for (const message of newMessages) {
+        // User messages are immediately complete, assistant messages need state: "done"
+        const isUserMessage = message.role === "user";
+        const isDone = message.parts?.some((part: any) => part.state === "done");
+        const isComplete = isUserMessage || isDone;
+        
+        if (!savedMessageIdsRef.current.has(message.id) && isComplete) {
+          try {
+            await saveCompleteMessage(convId, message);
+            savedMessageIdsRef.current.add(message.id);
+            savedAny = true;
+            
+            // Check if this is the first user message for title generation
+            if (isUserMessage && !titleGeneratedRef.current && dbMessages.length === 0) {
+              isFirstUserMessage = true;
+            }
+          } catch (error) {
+            console.error("Failed to save message:", message.id, error);
+          }
+        }
+      }
+      
+      // After saving, reload from database if we saved anything
+      if (savedAny) {
+        await loadMessagesFromDb();
+        
+        // Generate title after first user message is saved
+        if (isFirstUserMessage && model && !titleGeneratedRef.current) {
+          titleGeneratedRef.current = true;
+          try {
+            const firstUserMessage = newMessages.find(m => m.role === "user");
+            if (firstUserMessage) {
+              await generateTitle({
+                chatId: convId,
+                firstMessage: firstUserMessage,
+                model: model
+              });
+            }
+          } catch (error) {
+            console.error("Failed to generate title:", error);
+          }
+        }
+        
+      }
+    };
+    
+    saveNewMessages();
+  }, [newMessages, convId, model, dbMessages.length]);
+
+  // Combined messages: database messages + only unsaved streaming messages
+  const dbMessageIds = new Set(dbMessages.map(msg => msg.id));
+  const unseenNewMessages = newMessages.filter(msg => !dbMessageIds.has(msg.id));
+  const allMessages = [...dbMessages, ...unseenNewMessages];
+  
+  // Context change detection - runs after messages are updated
+  useEffect(() => {
+    const checkContextChange = async () => {
+      if (!convId || !titleGeneratedRef.current || !model || allMessages.length < 6) {
+        return;
+      }
+
+      // Increment message counter when new messages are added
+      if (allMessages.length > 0) {
+        messagesSinceLastTitleUpdateRef.current += 1;
+      }
+      
+      // Check for context changes every 4-6 messages, with a minimum time interval
+      const timeSinceLastUpdate = Date.now() - lastTitleUpdateRef.current;
+      const shouldCheckContext = messagesSinceLastTitleUpdateRef.current >= 4 && 
+                               timeSinceLastUpdate > 60000; // At least 1 minute between updates
+      
+      if (shouldCheckContext) {
+        try {
+          const conversation = await getConversation(convId);
+          const currentTitle = conversation.title;
+          
+          const contextChangeResult = await detectContextChange({
+            chatId: convId,
+            recentMessages: allMessages,
+            model: model,
+            currentTitle: currentTitle,
+            messagesSinceLastUpdate: messagesSinceLastTitleUpdateRef.current
+          });
+          
+          if (contextChangeResult.hasChanged) {
+            console.log(`Title updated from "${currentTitle}" to "${contextChangeResult.newTitle}"`);
+            messagesSinceLastTitleUpdateRef.current = 0;
+            lastTitleUpdateRef.current = Date.now();
+          }
+        } catch (error) {
+          console.error("Failed to check for context changes:", error);
+        }
+      }
+    };
+
+    checkContextChange();
+  }, [convId, model, allMessages.length]);
 
   useEffect(() => {
     if (mounted.current) {
       return;
     }
-
-    ref.current?.scrollToIndex(messages.map((m) => m.id).length - 1, {
+    
+    ref.current?.scrollToIndex(allMessages.length - 1, {
       align: "end",
     });
 
@@ -70,70 +269,19 @@ export default function ChatView({
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [messages.map((m) => m.id).length]);
+  }, [allMessages.length]);
 
   useEffect(() => {
-    const load = async () => {
-      if (!convId) {
-        setMessages([]);
-        lastConversationIdRef.current = undefined;
-        return;
-      }
-
-      // Update last conversation ref
-      lastConversationIdRef.current = convId;
-
-      // Try to get from cache first
-      const cachedMessages = chatCache.getMessages(convId);
-      if (cachedMessages) {
-        setMessages(cachedMessages);
-
-        // Start preloading adjacent conversations
-        setTimeout(() => {
-          const adjacent = chatCache.getAdjacentConversationIds(convId);
-          const toPreload = [adjacent.prev, adjacent.next].filter(
-            Boolean
-          ) as string[];
-          if (toPreload.length > 0) {
-            chatCache.preloadConversations(toPreload, getMessages, 1);
-          }
-        }, 200);
-
-        return;
-      }
-
-      // If not in cache, show loading and fetch from server
-      setIsLoadingMessages(true);
-      try {
-        const msgs = await getMessages(convId);
-        // Deduplicate messages by ID
-        const uniqueMessages = msgs.filter(
-          (msg, index, arr) => arr.findIndex((m) => m.id === msg.id) === index
-        );
-
-        // Cache the messages and update state
-        chatCache.setMessages(convId, uniqueMessages);
-        setMessages(uniqueMessages);
-        console.log(uniqueMessages);
-
-        // Start preloading adjacent conversations
-        setTimeout(() => {
-          const adjacent = chatCache.getAdjacentConversationIds(convId);
-          const toPreload = [adjacent.prev, adjacent.next].filter(
-            Boolean
-          ) as string[];
-          if (toPreload.length > 0) {
-            chatCache.preloadConversations(toPreload, getMessages, 1);
-          }
-        }, 500);
-      } catch (error) {
-        console.error("Failed to load messages:", error);
-        setMessages([]);
-      } finally {
-        setIsLoadingMessages(false);
-      }
-    };
-    void load();
+    // Load messages when conversation ID changes
+    lastConversationIdRef.current = convId;
+    
+    // Clear saved message IDs when switching conversations
+    savedMessageIdsRef.current.clear();
+    titleGeneratedRef.current = false;
+    messagesSinceLastTitleUpdateRef.current = 0;
+    lastTitleUpdateRef.current = Date.now();
+    
+    loadMessagesFromDb();
   }, [convId]);
 
   useEffect(() => {
@@ -143,19 +291,24 @@ export default function ChatView({
         setModels(list);
         
         if (list.length > 0) {
-          const enabledModels = list.filter((m) => m.enabled);
-          const defaultModel =
-            enabledModels.length > 0 ? enabledModels[0].model : list[0].model;
-          setSelectedModel((m) => m ?? defaultModel);
+          // All models are now enabled by default if API key is set
+          const defaultModel = list[0].model;
+          
+          // Try to load from localStorage first, fallback to default
+          const storedModel = localStorage.getItem("selected-model");
+          const modelToUse = storedModel && list.find(m => m.model === storedModel) ? storedModel : defaultModel;
+          
+          setSelectedModel((m) => m ?? modelToUse);
         }
-      } catch {}
+      } catch (error) {
+        console.error("Failed to load models in chat view:", error);
+      }
     })();
 
     const handler = (e: any) => {
       const selected = e?.detail as string | undefined;
       if (selected) {
         setSelectedModel(selected);
-        // Store in localStorage for consistency
         localStorage.setItem("selected-model", selected);
       }
     };
@@ -164,174 +317,32 @@ export default function ChatView({
       window.removeEventListener("model-selected", handler as EventListener);
   }, []);
 
+  // Auto-scroll for new messages
   useEffect(() => {
-    const unsubs: Array<() => void> = [];
-
-    (async () => {
-      // Listen for stream start
-      const streamStartUnsub = await listen<{
-        conversation_id: string;
-        message_id: string;
-      }>("chat_stream_start", (e) => {
-        if (e.payload.conversation_id === convId) {
-          const streamingMessage: StreamingMessage = {
-            id: e.payload.message_id,
-            conversation_id: e.payload.conversation_id,
-            role: "assistant",
-            content: "",
-            created_at: new Date().toISOString(),
-            isStreaming: true,
-            streamingContent: "",
-          };
-
-          setMessages((prev) => {
-            // Check if message with this ID gbalready exists
-            const existingIndex = prev.findIndex(
-              (msg) => msg.id === streamingMessage.id
-            );
-            if (existingIndex !== -1) {
-              // Update existing message instead of adding duplicate
-              const updated = [...prev];
-              updated[existingIndex] = streamingMessage;
-              return updated;
-            }
-            return [...prev, streamingMessage];
-          });
-          setCurrentStreamingMessageId(e.payload.message_id);
-          streamStartAtRef.current = Date.now();
-        }
-      });
-      unsubs.push(() => streamStartUnsub());
-
-      // Listen for stream tokens
-      const streamTokenUnsub = await listen<{
-        conversation_id: string;
-        token: string;
-      }>("chat_stream_token", (e) => {
-        if (e.payload.conversation_id === convId) {
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (
-                msg.isStreaming &&
-                msg.conversation_id === e.payload.conversation_id
-              ) {
-                return {
-                  ...msg,
-                  streamingContent:
-                    (msg.streamingContent || "") + e.payload.token,
-                };
-              }
-              return msg;
-            })
-          );
-        }
-      });
-      unsubs.push(() => streamTokenUnsub());
-
-      // Listen for stream end
-      const streamEndUnsub = await listen<{
-        conversation_id: string;
-        message_id: string;
-        complete_content: string;
-      }>("chat_stream_end", (e) => {
-        if (e.payload.conversation_id === convId) {
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.id === e.payload.message_id && msg.isStreaming) {
-                return {
-                  ...msg,
-                  content: e.payload.complete_content,
-                  isStreaming: false,
-                  streamingContent: undefined,
-                };
-              }
-              return msg;
-            })
-          );
-
-          // Calculate tokens per second
-          const startedAt = streamStartAtRef.current;
-          if (startedAt) {
-            const durationSec = Math.max(0.25, (Date.now() - startedAt) / 1000);
-            const approxTokens = Math.max(
-              1,
-              Math.ceil(e.payload.complete_content.length / 4)
-            );
-            const tps = approxTokens / durationSec;
-            setSpeeds((s) => ({ ...s, [e.payload.message_id]: tps }));
-          }
-
-          setCurrentStreamingMessageId(null);
-          streamStartAtRef.current = null;
-        }
-      });
-      unsubs.push(() => streamEndUnsub());
-    })();
-
-    return () => {
-      unsubs.forEach((u) => u());
-    };
-  }, [convId]);
-
-
-  // Always scroll for streaming content
-  useEffect(() => {
-    if (currentStreamingMessageId) {
+    if (status === "streaming") {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [currentStreamingMessageId]);
+  }, [status, allMessages.length]);
 
-  const onSend = async () => {
-    const text = input.trim();
-    if (!text) return;
+  const onSend = async (message: PromptInputMessage) => {
+    const hasText = Boolean(message.text);
+    const hasAttachments = Boolean(message.files?.length);
 
-    // Check if any models are enabled (have API keys)
-    const enabledModels = models.filter(m => m.enabled);
-    if (enabledModels.length === 0) {
-      // Show a temporary message in the chat instead of an alert
-      const noApiKeyMessage: StreamingMessage = {
-        id: `system-${Date.now()}`,
-        conversation_id: conversationId || 'temp',
-        role: "assistant",
-        content: `I'd love to help, but you'll need to set up an API key first! 
-
-To get started:
-1. Go to Settings → Model Providers
-2. Choose a provider (OpenAI, Anthropic, Google Gemini, Groq, or OpenRouter)
-3. Add your API key
-4. Come back and let's chat!
-
-We support multiple providers so you can choose the one that works best for you.`,
-        created_at: new Date().toISOString(),
-        isStreaming: false
-      };
-      
-      setMessages((m) => [...m, noApiKeyMessage]);
+    if (!(hasText || hasAttachments)) {
       return;
     }
 
-    if (selectedModel) {
-      const found = models.find((m) => m.model === selectedModel);
-      if (found && !found.enabled) {
-        // Show a temporary message for specific model without API key
-        const modelNoApiKeyMessage: StreamingMessage = {
-          id: `system-${Date.now()}`,
-          conversation_id: conversationId || 'temp',
-          role: "assistant",
-          content: `The ${selectedModel} model requires an API key for ${found.adapter_kind}. 
 
-Please go to Settings → Model Providers and set up your ${found.adapter_kind} API key to use this model.`,
-          created_at: new Date().toISOString(),
-          isStreaming: false
-        };
-        
-        setMessages((m) => [...m, modelNoApiKeyMessage]);
-        return;
-      }
+    // All models are now enabled by default if API key is set
+    // No need to check for enabled models anymore
+
+    if (selectedModel) {
     }
 
     setInput("");
     let current = convId;
+
+    // Create conversation if it doesn't exist
     if (!current) {
       const conv = await createConversation();
       current = conv.id;
@@ -339,43 +350,22 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
       history.replaceState(null, "", `/dashboard/${conv.id}`);
     }
 
-    // Optimistic update: add message immediately to UI
-    const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
-      conversation_id: current,
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((m) => [...m, optimisticMessage]);
-    chatCache.addMessage(current, optimisticMessage);
-
-    // Then save to server and update with real ID
-    try {
-      const user = await addMessage(current, "user", text);
-      setMessages((m) => {
-        const updated = m.map((msg) =>
-          msg.id === optimisticMessage.id ? user : msg
-        );
-        return updated;
-      });
-      chatCache.setMessages(
-        current,
-        messages.map((msg) => (msg.id === optimisticMessage.id ? user : msg))
-      );
-    } catch (error) {
-      // Remove optimistic message on error
-      setMessages((m) => m.filter((msg) => msg.id !== optimisticMessage.id));
-      console.error("Failed to save message:", error);
-      return;
-    }
-
-    console.log("Sending message with selected model:", selectedModel);
-    void streamChat(current, text, selectedModel);
+    // Send message using AI SDK - this will trigger the chat flow and message saving
+    sendMessage(
+      { 
+        text: message.text || 'Sent with attachments',
+        files: message.files 
+      },
+      {
+        body: {
+          model: model,
+          webSearch: useWebSearch,
+        },
+      },
+    );
   };
 
-  const hasAnyMessages = messages.length > 0;
+  const hasAnyMessages = allMessages.length > 0;
 
   return (
     <StickToBottom className="" instance={instance}>
@@ -400,84 +390,29 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
         ) : (
           <ScrollArea className="h-full w-full rounded-md p-4 flex-1 overflow-y-auto space-y-2 no-scrollbar">
             <div className="h-full w-full overflow-y-auto">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={m.role === "user" ? "text-right" : "text-left"}
-                >
-                  {m.role === "assistant" && (
-                    <div className="mb-1 flex flex-col items-start gap-2 text-white/80">
-                      <div className="flex items-center gap-2">
-                        <img src="/logo.svg" alt="Tethra" className="h-5 w-5" />
-                        <span className=" font-medium">Tethra</span>
-                      </div>
-                      {m.isStreaming && (
-                        <TextShimmer
-                          className="text-sm"
-                          duration={1}
-                          spread={1}
-                        >
-                          Tethra is thinking
-                        </TextShimmer>
-                      )}
-                    </div>
-                  )}
-                  {m.role === "assistant" ? (
-                    <div className="max-w-2xl text-white">
-                      <Response>
-                        {m.isStreaming ? m.streamingContent || "" : m.content}
-                      </Response>
-                      {!m.isStreaming && (
-                        <div className="mt-3 flex items-center gap-3 text-xs text-white/60">
-                          <button
-                            className="hover:text-white/90"
-                            onClick={() =>
-                              navigator.clipboard.writeText(m.content)
-                            }
-                            title="Copy"
-                          >
-                            <span className="inline-flex items-center gap-1">
-                              <Copy size={14} /> Copy
-                            </span>
-                          </button>
-                          <button
-                            className="hover:text-white/90"
-                            onClick={() => {
-                              const lastUser = [...messages]
-                                .reverse()
-                                .find((x) => x.role === "user");
-                              if (!lastUser || !convId) return;
-                              console.log(
-                                "Regenerating with selected model:",
-                                selectedModel
-                              );
-                              void streamChat(
-                                convId,
-                                lastUser.content,
-                                selectedModel
-                              );
-                            }}
-                            title="Regenerate"
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              <RefreshCw size={14} />
-                              Regenerate
-                              {speeds[m.id] && (
-                                <span className="ml-1 opacity-80">
-                                  • {Math.round(speeds[m.id])} tokens/sec
-                                </span>
-                              )}
-                            </span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+              {console.log(allMessages)}
+              {allMessages.map((message) => (
+                
+                <div key={message.id} className="mb-4">
+                  {message.role === "assistant" ? (
+
+                    <AIMessage 
+                      message={message}
+                      status={status}
+                      onCopy={() => {
+                        const text = message.parts
+                          ?.filter((part: any) => part.type === 'text')
+                          .map((part: any) => part.text)
+                          .join('') || '';
+                        navigator.clipboard.writeText(text);
+                      }}
+                      onRegenerate={() => {
+                        // For now, just trigger a new message
+                      }}
+                      tokensPerSecond={speeds[message.id]}
+                    />
                   ) : (
-                    <div className="inline-block max-w-2xl rounded-xl px-4 py-3 text-white bg-white/10">
-                      <p className="whitespace-pre-wrap leading-7 no-scrollbar">
-                        {m.content}
-                      </p>
-                    </div>
+                    <UserMessage message={message} />
                   )}
                 </div>
               ))}
@@ -522,7 +457,7 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
             </div>
           </>
         )}
-        {!isLoadingMessages && (
+        {/* {!isLoadingMessages && (
           <div className="flex items-center gap-2 w-full">
             <form
               onSubmit={(e) => {
@@ -544,7 +479,7 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
                   }}
                   placeholder="Respond to Tethra"
                   className="w-full flex-1 bg-transparent text-white placeholder-white outline-none resize-none overflow-y-auto max-h-52 leading-normal"
-                  disabled={currentStreamingMessageId !== null}
+                  disabled={status === "streaming"}
                 />
                 <button
                   type="button"
@@ -554,7 +489,7 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
                 </button>
                 <button
                   type="submit"
-                  disabled={currentStreamingMessageId !== null}
+                  disabled={status === "streaming"}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/5 text-white hover:bg-black/10 disabled:opacity-50"
                 >
                   <Send size={16} />
@@ -562,9 +497,47 @@ Please go to Settings → Model Providers and set up your ${found.adapter_kind} 
               </div>
             </form>
           </div>
-        )}
+        )} */}
+        <PromptInput onSubmit={onSend} className="mt-4" globalDrop multiple>
+          <PromptInputBody>
+            <PromptInputAttachments>
+              {(attachment) => <PromptInputAttachment data={attachment} />}
+            </PromptInputAttachments>
+            <PromptInputTextarea
+              onChange={(e) => setInput(e.target.value)}
+              value={input}
+            />
+          </PromptInputBody>
+          <PromptInputToolbar>
+            <PromptInputTools>
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger />
+                <PromptInputActionMenuContent>
+                  <PromptInputActionAddAttachments />
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+              <PromptInputButton
+                onClick={() => setUseMicrophone(!useMicrophone)}
+                variant={useMicrophone ? 'default' : 'ghost'}
+              >
+                <MicIcon size={16} />
+                <span className="sr-only">Microphone</span>
+              </PromptInputButton>
+              <PromptInputButton
+                onClick={() => setUseWebSearch(!useWebSearch)}
+                variant={useWebSearch ? 'default' : 'ghost'}
+              >
+                <GlobeIcon size={16} />
+                <span>Search</span>
+              </PromptInputButton>
+             
+            </PromptInputTools>
+            <PromptInputSubmit disabled={!input && !status} status={status} />
+          </PromptInputToolbar>
+        </PromptInput>
       </div>
     </Virtualizer>
     </StickToBottom>
   );
 }
+

@@ -57,8 +57,9 @@ fn is_openrouter_model(model: &str) -> bool {
 #[tauri::command]
 pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Result<(), String> {
     let _ = dotenvy::dotenv();
-    
-    // Log the received model for debugging
+
+    // Log the received input for debugging
+    println!("stream_chat called with conversation_id: {}, user_message: {}", input.conversation_id, input.user_message);
     println!("Received model parameter: {:?}", input.model);
     
     let model = input.model.unwrap_or_else(|| {
@@ -94,9 +95,35 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
     let window = app.get_webview_window("main").ok_or_else(|| "no main window".to_string())?;
 
     tauri::async_runtime::spawn(async move {
-        // Generate message ID for this response
-        let message_id = uuid();
+        // Generate message ID for user message
+        let user_message_id = uuid();
         let created_at = Utc::now().to_rfc3339();
+
+        // Save user message to database as full AI SDK message structure
+        let user_message_json = serde_json::json!({
+            "id": user_message_id,
+            "role": "user",
+            "parts": [
+                {
+                    "type": "text",
+                    "text": user_text
+                }
+            ]
+        });
+        if let Ok(conn) = get_conn(&app) {
+            match conn.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+                params![user_message_id, conversation_id, "user", user_message_json.to_string(), created_at],
+            ) {
+                Ok(_) => println!("Successfully saved user message to database"),
+                Err(e) => eprintln!("Failed to save user message to database: {}", e),
+            }
+        } else {
+            eprintln!("Failed to get database connection for user message");
+        }
+
+        // Generate message ID for AI response
+        let message_id = uuid();
 
         // Emit stream start event
         let _ = window.emit("chat_stream_start", ChatStreamStart {
@@ -193,6 +220,11 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                         }
                     }
                 }
+            } else if model.starts_with("deepseek-") || model.starts_with("deepseek/") {
+                // DeepSeek provider - use OpenAI-compatible API
+                // This will be handled by the frontend DeepSeek provider
+                complete_content = "DeepSeek models should be handled by the frontend provider.".to_string();
+                None
             } else if model.contains(":") || model.starts_with("llama") || model.starts_with("qwen") || model.starts_with("codellama") {
                 // Ollama provider - no API key needed as it runs locally
                 let provider = OllamaProvider::new();
@@ -314,12 +346,31 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             // }
         }
         
-        // Persist the complete message to database
+        // Persist the complete message to database as full AI SDK message structure
+        let ai_message_json = serde_json::json!({
+            "id": message_id,
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "step-start"
+                },
+                {
+                    "type": "text",
+                    "text": complete_content,
+                    "state": "done"
+                }
+            ]
+        });
         if let Ok(conn) = get_conn(&app) {
-            let _ = conn.execute(
+            match conn.execute(
                 "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-                params![message_id, conversation_id, "assistant", complete_content, created_at],
-            );
+                params![message_id, conversation_id, "assistant", ai_message_json.to_string(), created_at],
+            ) {
+                Ok(_) => println!("Successfully saved assistant message to database"),
+                Err(e) => eprintln!("Failed to save assistant message to database: {}", e),
+            }
+        } else {
+            eprintln!("Failed to get database connection for assistant message");
         }
 
         // Emit stream end event
@@ -331,83 +382,17 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
 
         // Handle conversation title generation - generate immediately after first response
         if let Ok(conn) = get_conn(&app) {
-            use rusqlite::OptionalExtension;
-            let count: i64 = conn
+            let _count: i64 = conn
                 .query_row("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", params![&conversation_id], |row| row.get(0))
                 .unwrap_or(0);
-            
+
             // Check current title to see if it's still default
-            let current_title: String = conn
+            let _current_title: String = conn
                 .query_row("SELECT title FROM conversations WHERE id = ?", params![&conversation_id], |row| row.get(0))
                 .unwrap_or_else(|_| "New Chat".to_string());
             
-            // Generate title immediately after first assistant response (count >= 2 means we have user + assistant)
-            if count >= 2 && (current_title == "New Chat" || current_title.is_empty()) {
-                let first_user: Option<String> = conn
-                    .query_row(
-                        "SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY datetime(created_at) ASC LIMIT 1",
-                        params![&conversation_id],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .unwrap_or(None);
-
-                if let Some(initial) = first_user {
-                    let title_prompt = format!(
-                        "Generate a short, descriptive title (max 6 words) for this conversation based on the user's request. No quotes or trailing punctuation.\n\nUser message: {}",
-                        initial
-                    );
-                    
-                    // Use genai for title generation
-                    use genai::Client;
-                    use genai::chat::{ChatMessage, ChatRequest};
-                    let title_client = Client::default();
-                    let req = ChatRequest::new(vec![ChatMessage::user(&title_prompt)]);
-                    match title_client.exec_chat("gemini-1.5-flash", req, None).await {
-                        Ok(title_res) => {
-                            let mut new_title = title_res.first_text().unwrap_or("New Chat").trim().to_string();
-                            if new_title.ends_with('.') { new_title.pop(); }
-                            if new_title.is_empty() { new_title = "New Chat".to_string(); }
-                            let _ = conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![new_title, &conversation_id]);
-                        },
-                        Err(_) => { /* skip title generation on failure */ }
-                    }
-                }
-            } else if count >= 6 {
-                // Keep existing logic for retitling based on topic drift
-                let first_user: Option<String> = conn
-                    .query_row(
-                        "SELECT content FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY datetime(created_at) ASC LIMIT 1",
-                        params![&conversation_id],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .unwrap_or(None);
-
-                if let Some(initial) = first_user {
-                    let decide_prompt = format!(
-                        "You are deciding whether to change a chat title based on topic drift. If the latest exchange shifts the topic materially beyond the initial message, reply with exactly: CHANGE: <New Title> (max 5 words). Otherwise reply with exactly: KEEP.\n\nInitial user message: {}\nLatest assistant reply: {}",
-                        initial,
-                        complete_content
-                    );
-                    
-                    use genai::Client;
-                    use genai::chat::{ChatMessage, ChatRequest};
-                    let title_client = Client::default();
-                    let req = ChatRequest::new(vec![ChatMessage::user(&decide_prompt)]);
-                    match title_client.exec_chat("gemini-1.5-flash", req, None).await {
-                        Ok(decision_res) => {
-                            let decision = decision_res.first_text().unwrap_or("").trim().to_string();
-                            if decision.to_uppercase().starts_with("CHANGE:") {
-                                let mut new_title = decision[7..].trim().to_string();
-                                if new_title.is_empty() { new_title = "Conversation".to_string(); }
-                                let _ = conn.execute("UPDATE conversations SET title = ? WHERE id = ?", params![new_title, &conversation_id]);
-                            }
-                        },
-                        Err(_) => { /* skip retitle on failure */ }
-                    }
-                }
-            }
+            // Title generation and retitling is now handled by the frontend using AI SDK
+            // No backend genai title generation needed
         }
     });
 
@@ -422,102 +407,56 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
     let settings = read_settings(&app).unwrap_or_default();
     let mut out = Vec::new();
 
-    // OpenAI - enabled if API key is set and provider is enabled
-    if settings.openai_enabled.unwrap_or(true) {
-        let has_api_key = settings.openai_api_key.is_some() || settings.api_key.is_some();
+    // OpenAI - enabled if API key is set
+    let openai_has_api_key = settings.openai_api_key.is_some() || settings.api_key.is_some();
 
+    if openai_has_api_key {
         // Add manually configured models first
         if let Some(models) = settings.openai_models.clone() {
             for m in models {
                 out.push(ListedModel {
                     model: m,
                     adapter_kind: "OpenAI".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
 
-        // If no manual models configured, try to fetch from API if API key is available
-        if settings.openai_models.is_none() && has_api_key {
-            if let Ok(api_models) = get_adapter_models("OpenAI".to_string()).await {
-                for m in api_models {
-                    out.push(ListedModel {
-                        model: m,
-                        adapter_kind: "OpenAI".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            } else {
-                // Fallback to default models if API fetch fails
-                let default_models = vec!["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"];
-                for model in default_models {
-                    out.push(ListedModel {
-                        model: model.to_string(),
-                        adapter_kind: "OpenAI".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            }
-        } else if settings.openai_models.is_none() {
-            // No API key, show popular default models
+        // If no manual models configured, use default models
+        if settings.openai_models.is_none() {
+            // Show popular default models
             let default_models = vec!["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"];
             for model in default_models {
                 out.push(ListedModel {
                     model: model.to_string(),
                     adapter_kind: "OpenAI".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
     }
 
-    // Anthropic - enabled if API key is set and provider is enabled
-    if settings.anthropic_enabled.unwrap_or(true) {
-        let has_api_key = settings.anthropic_api_key.is_some();
+    // Anthropic - enabled if API key is set
+    let anthropic_has_api_key = settings.anthropic_api_key.is_some();
 
+    if anthropic_has_api_key {
         // Add manually configured models first
         if let Some(models) = settings.anthropic_models.clone() {
             for m in models {
                 out.push(ListedModel {
                     model: m,
                     adapter_kind: "Anthropic".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
 
-        // If no manual models configured, try to fetch from API if API key is available
-        if settings.anthropic_models.is_none() && has_api_key {
-            if let Ok(api_models) = get_adapter_models("Anthropic".to_string()).await {
-                for m in api_models {
-                    out.push(ListedModel {
-                        model: m,
-                        adapter_kind: "Anthropic".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            } else {
-                // Fallback to default models if API fetch fails
-                let default_models = vec![
-                    "claude-3-5-sonnet-20241022", 
-                    "claude-3-5-haiku-20241022", 
-                    "claude-3-opus-20240229",
-                    "claude-3-sonnet-20240229",
-                    "claude-3-haiku-20240307"
-                ];
-                for model in default_models {
-                    out.push(ListedModel {
-                        model: model.to_string(),
-                        adapter_kind: "Anthropic".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            }
-        } else if settings.anthropic_models.is_none() {
-            // No API key, show popular default models
+        // If no manual models configured, use default models
+        if settings.anthropic_models.is_none() {
+            // Show popular default models
             let default_models = vec![
-                "claude-3-5-sonnet-20241022", 
-                "claude-3-5-haiku-20241022", 
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
                 "claude-3-opus-20240229",
                 "claude-3-sonnet-20240229",
                 "claude-3-haiku-20240307"
@@ -526,58 +465,33 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 out.push(ListedModel {
                     model: model.to_string(),
                     adapter_kind: "Anthropic".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
     }
 
-    // Gemini - enabled if API key is set and provider is enabled
-    if settings.gemini_enabled.unwrap_or(true) {
-        let has_api_key = settings.gemini_api_key.is_some();
+    // Gemini - enabled if API key is set
+    let gemini_has_api_key = settings.gemini_api_key.is_some();
 
+    if gemini_has_api_key {
         // Add manually configured models first
         if let Some(models) = settings.gemini_models.clone() {
             for m in models {
                 out.push(ListedModel {
                     model: m,
                     adapter_kind: "Gemini".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
 
-        // If no manual models configured, try to fetch from API if API key is available
-        if settings.gemini_models.is_none() && has_api_key {
-            if let Ok(api_models) = get_adapter_models("Gemini".to_string()).await {
-                for m in api_models {
-                    out.push(ListedModel {
-                        model: m,
-                        adapter_kind: "Gemini".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            } else {
-                // Fallback to default models if API fetch fails
-                let default_models = vec![
-                    "gemini-1.5-pro-latest",
-                    "gemini-1.5-flash-latest", 
-                    "gemini-1.5-flash-8b-latest",
-                    "gemini-2.0-flash-exp"
-                ];
-                for model in default_models {
-                    out.push(ListedModel {
-                        model: model.to_string(),
-                        adapter_kind: "Gemini".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            }
-        } else if settings.gemini_models.is_none() {
-            // No API key, show popular default models
+        // If no manual models configured, use default models
+        if settings.gemini_models.is_none() {
+            // Show popular default models
             let default_models = vec![
                 "gemini-1.5-pro-latest",
-                "gemini-1.5-flash-latest", 
+                "gemini-1.5-flash-latest",
                 "gemini-1.5-flash-8b-latest",
                 "gemini-2.0-flash-exp"
             ];
@@ -585,58 +499,33 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 out.push(ListedModel {
                     model: model.to_string(),
                     adapter_kind: "Gemini".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
     }
 
-    // Groq - enabled if API key is set and provider is enabled
-    if settings.groq_enabled.unwrap_or(true) {
-        let has_api_key = settings.groq_api_key.is_some();
+    // Groq - enabled if API key is set
+    let groq_has_api_key = settings.groq_api_key.is_some();
 
+    if groq_has_api_key {
         // Add manually configured models first
         if let Some(models) = settings.groq_models.clone() {
             for m in models {
                 out.push(ListedModel {
                     model: m,
                     adapter_kind: "Groq".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
 
-        // If no manual models configured, try to fetch from API if API key is available
-        if settings.groq_models.is_none() && has_api_key {
-            if let Ok(api_models) = get_adapter_models("Groq".to_string()).await {
-                for m in api_models {
-                    out.push(ListedModel {
-                        model: m,
-                        adapter_kind: "Groq".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            } else {
-                // Fallback to default models if API fetch fails
-                let default_models = vec![
-                    "llama-3.1-70b-versatile",
-                    "llama-3.1-8b-instant", 
-                    "mixtral-8x7b-32768",
-                    "gemma2-9b-it"
-                ];
-                for model in default_models {
-                    out.push(ListedModel {
-                        model: model.to_string(),
-                        adapter_kind: "Groq".to_string(),
-                        enabled: has_api_key,
-                    });
-                }
-            }
-        } else if settings.groq_models.is_none() {
-            // No API key, show popular default models
+        // If no manual models configured, use default models
+        if settings.groq_models.is_none() {
+            // Show popular default models
             let default_models = vec![
                 "llama-3.1-70b-versatile",
-                "llama-3.1-8b-instant", 
+                "llama-3.1-8b-instant",
                 "mixtral-8x7b-32768",
                 "gemma2-9b-it"
             ];
@@ -644,15 +533,16 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 out.push(ListedModel {
                     model: model.to_string(),
                     adapter_kind: "Groq".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
     }
 
-    // OpenRouter - enabled if API key is set and provider is enabled
-    if settings.openrouter_enabled.unwrap_or(true) {
-        let has_api_key = settings.openrouter_api_key.is_some();
+    // OpenRouter - enabled if API key is set
+    let openrouter_has_api_key = settings.openrouter_api_key.is_some();
+
+    if openrouter_has_api_key {
 
         // Add manually configured models first
         if let Some(models) = settings.openrouter_models.clone() {
@@ -660,52 +550,87 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 out.push(ListedModel {
                     model: m,
                     adapter_kind: "OpenRouter".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
                 });
             }
         }
 
         // If no manual models configured, try to fetch from API if API key is available
-        if settings.openrouter_models.is_none() && has_api_key {
+        if settings.openrouter_models.is_none() && openrouter_has_api_key {
             if let Ok(api_models) = get_adapter_models("OpenRouter".to_string()).await {
                 for m in api_models {
                     out.push(ListedModel {
                         model: m,
                         adapter_kind: "OpenRouter".to_string(),
-                        enabled: has_api_key,
+                        enabled: true,
                     });
                 }
             } else {
                 // Fallback to default models if API fetch fails
                 let default_models = vec![
                     "anthropic/claude-3.5-sonnet",
-                    "openai/gpt-4o", 
+                    "openai/gpt-4o",
                     "google/gemini-pro-1.5",
-                    "meta-llama/llama-3.1-70b-instruct",
-                    "openrouter/auto"
+                    "meta-llama/llama-3.2-90b-instruct",
+                    "mistralai/mistral-large",
                 ];
                 for model in default_models {
                     out.push(ListedModel {
                         model: model.to_string(),
                         adapter_kind: "OpenRouter".to_string(),
-                        enabled: has_api_key,
+                        enabled: true,
                     });
                 }
             }
         } else if settings.openrouter_models.is_none() {
-            // No API key, show popular default models
+            // Show popular default models
             let default_models = vec![
                 "anthropic/claude-3.5-sonnet",
-                "openai/gpt-4o", 
+                "openai/gpt-4o",
                 "google/gemini-pro-1.5",
-                "meta-llama/llama-3.1-70b-instruct",
-                "openrouter/auto"
+                "meta-llama/llama-3.2-90b-instruct",
+                "mistralai/mistral-large",
             ];
             for model in default_models {
                 out.push(ListedModel {
                     model: model.to_string(),
                     adapter_kind: "OpenRouter".to_string(),
-                    enabled: has_api_key,
+                    enabled: true,
+                });
+            }
+        }
+    }
+
+    // DeepSeek - enabled if API key is set
+    let deepseek_has_api_key = settings.deepseek_api_key.is_some();
+
+    if deepseek_has_api_key {
+        // Add manually configured models first
+        if let Some(models) = settings.deepseek_models.clone() {
+            for m in models {
+                out.push(ListedModel {
+                    model: m,
+                    adapter_kind: "DeepSeek".to_string(),
+                    enabled: true,
+                });
+            }
+        }
+
+        // If no manual models configured, use default models
+        if settings.deepseek_models.is_none() {
+            // Show popular default models
+            let default_models = vec![
+                "deepseek-chat",
+                "deepseek-coder",
+                "deepseek-reasoner",
+                "deepseek-chat-67b",
+                "deepseek-coder-33b"
+            ];
+            for model in default_models {
+                out.push(ListedModel {
+                    model: model.to_string(),
+                    adapter_kind: "DeepSeek".to_string(),
+                    enabled: true,
                 });
             }
         }
@@ -840,6 +765,48 @@ pub async fn get_adapter_models(adapter_kind: String) -> Result<Vec<String>, Str
                 Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OllamaChatInput {
+    pub model: String,
+    pub messages: Vec<serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn stream_ollama_chat(
+    _app: tauri::AppHandle,
+    input: OllamaChatInput
+) -> Result<Vec<String>, String> {
+    // Extract the user message from the messages array
+    let user_message = input.messages
+        .iter()
+        .find(|msg| msg["role"] == "user")
+        .and_then(|msg| msg["content"].as_str())
+        .unwrap_or("Hello");
+
+    // Use the Ollama provider directly
+    let provider = OllamaProvider::new();
+    match provider.stream_chat(&input.model, user_message).await {
+        Ok(mut stream) => {
+            use futures::StreamExt;
+            let mut tokens = Vec::new();
+
+            while let Some(token_result) = stream.next().await {
+                match token_result {
+                    Ok(token) => {
+                        tokens.push(token);
+                    }
+                    Err(e) => {
+                        return Err(format!("Stream error: {}", e));
+                    }
+                }
+            }
+
+            Ok(tokens)
+        }
+        Err(e) => Err(format!("Failed to start Ollama stream: {}", e))
     }
 }
 

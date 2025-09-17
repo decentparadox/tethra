@@ -12,6 +12,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { listChatModels, type ListedModel, getConversation, updateConversationModel } from "../lib/chat";
+import { PROVIDERS } from "../components/providers";
+import { getCachedProviders } from "../lib/api-keys";
 import ModelIcon, { type ModelType } from "@/components/model-icon";
 
 function toIcon(adapter: string): ModelType {
@@ -19,8 +21,8 @@ function toIcon(adapter: string): ModelType {
   const key = adapter.toLowerCase();
   if (key.includes("openai")) return "openai";
   if (key.includes("anthropic")) return "anthropic";
-  if (key.includes("gemini")) return "gemini";
-  if (key.includes("groq")) return "mistral"; // fallback icon
+  if (key.includes("gemini") || key.includes("google")) return "gemini";
+  if (key.includes("groq")) return "grok"; // use grok icon for groq
   if (key.includes("openrouter")) return "openrouter";
   if (key.includes("mistral")) return "mistral";
   if (key.includes("ollama")) return "ollama";
@@ -28,22 +30,78 @@ function toIcon(adapter: string): ModelType {
   return key as ModelType;
 }
 
+// helper for provider icons (reserved for future use)
+// function getProviderIcon(providerName: string): ModelType {
+//   switch (providerName) {
+//     case "google": return "gemini";
+//     case "openai": return "openai";
+//     case "anthropic": return "anthropic";
+//     case "groq": return "grok";
+//     case "openrouter": return "openrouter";
+//     default: return "gemini";
+//   }
+// }
+
 export default function ModelSelector({ conversationId }: { conversationId?: string }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ListedModel[]>([]);
   const [selected, setSelected] = useState<string | undefined>(undefined);
 
+  // Get available AI SDK models from providers
+  const aiSdkModels = useMemo(() => {
+    const cachedProviders = getCachedProviders();
+    const availableModels: ListedModel[] = [];
+
+    // Add provider models if they have cached API keys
+    Object.entries(PROVIDERS).forEach(([providerName, provider]) => {
+      if (cachedProviders.includes(providerName)) {
+        provider.models.forEach(model => {
+          availableModels.push({
+            model,
+            adapter_kind: provider.displayName,
+            enabled: true,
+          });
+        });
+      }
+    });
+
+    console.log('AI SDK Models:', availableModels);
+    console.log('Cached Providers:', cachedProviders);
+
+    return availableModels;
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        const list = await listChatModels();
-        setModels(list);
-        const enabled = list.filter((m:any) => m.enabled);
-        const def = enabled[0]?.model ?? list[0]?.model;
+        // First, try to initialize Google provider to ensure it's available
+        try {
+          const { initializeGoogle } = await import("../components/providers/google");
+          await initializeGoogle();
+          console.log("Google provider initialized successfully");
+        } catch (error) {
+          console.warn("Google provider not available:", error);
+        }
+        
+        const backendModels = await listChatModels();
+        console.log('Backend Models:', backendModels);
+        
+        // Merge backend models with AI SDK models
+        const allModels = [
+          ...backendModels,
+          ...aiSdkModels.filter(sdkModel => 
+            !backendModels.some(backendModel => backendModel.model === sdkModel.model)
+          )
+        ];
+        
+        console.log('All Models:', allModels);
+        setModels(allModels);
+        // All models from backend are now enabled by default if API key is set
+        const def = allModels[0]?.model;
         
         // Try to load from localStorage first, fallback to default
         const storedModel = localStorage.getItem("selected-model");
-        const modelToUse = storedModel && list.find(m => m.model === storedModel) ? storedModel : def;
+        const modelToUse = storedModel && allModels.find(m => m.model === storedModel) ? storedModel : def;
         
         if (modelToUse) {
           setSelected((s) => {
@@ -113,12 +171,12 @@ export default function ModelSelector({ conversationId }: { conversationId?: str
           <CommandList>
             <CommandEmpty>No models found.</CommandEmpty>
             <CommandGroup>
-              {models.filter(m => m.enabled).map((m) => (
+              {models.map((m) => (
                 <CommandItem
                   key={m.model}
                   value={m.model}
                   onSelect={async (current) => {
-                    // Only enabled models are shown, so this is always a valid selection
+                    // All models are now enabled by default if API key is set
                     setSelected(current);
                     setOpen(false);
                     

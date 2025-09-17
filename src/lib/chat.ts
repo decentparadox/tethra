@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { UIMessage } from "@ai-sdk/react";
 
 export type Conversation = {
   id: string;
@@ -8,11 +9,18 @@ export type Conversation = {
   model?: string;
 };
 
-export type Message = {
+// Keep the old Message type for backward compatibility during transition
+export type LegacyMessage = {
   id: string;
   conversation_id: string;
   role: "user" | "assistant";
   content: string;
+  created_at: string;
+};
+
+// New type that works with AI SDK
+export type ConversationMessage = UIMessage & {
+  conversation_id: string;
   created_at: string;
 };
 
@@ -22,21 +30,45 @@ export async function listConversations(): Promise<Conversation[]> {
   return await invoke<Conversation[]>("db_list_conversations");
 }
 
-export async function getMessages(conversationId: string): Promise<Message[]> {
-  // send both keys to satisfy command schema (camelCase) and Rust param (snake_case)
-  return await invoke<Message[]>("db_get_messages", { conversationId, conversation_id: conversationId });
+// Legacy function - returns old format for backward compatibility
+export async function getLegacyMessages(conversationId: string): Promise<LegacyMessage[]> {
+  return await invoke<LegacyMessage[]>("db_get_messages", { conversationId, conversation_id: conversationId });
+}
+
+// New function - now works with AI SDK messages natively from backend
+export async function getMessages(conversationId: string): Promise<any[]> {
+  return await invoke<any[]>("db_get_ai_messages", { conversationId, conversation_id: conversationId });
 }
 
 export async function createConversation(title?: string, model?: string): Promise<Conversation> {
-  return await invoke<Conversation>("db_create_conversation", { input: { title, model } });
+  return await invoke<Conversation>("db_create_conversation", { title, model });
 }
 
-export async function addMessage(
+// Legacy function for backward compatibility
+export async function addLegacyMessage(
   conversationId: string,
   role: "user" | "assistant",
   content: string
-): Promise<Message> {
-  return await invoke<Message>("db_add_message", { input: { conversation_id: conversationId, role, content } });
+): Promise<LegacyMessage> {
+  return await invoke<LegacyMessage>("db_add_message", { input: { conversation_id: conversationId, role, content } });
+}
+
+// New function for AI SDK messages 
+export async function addMessage(
+  conversationId: string,
+  role: "user" | "assistant", 
+  content: string | any
+): Promise<ConversationMessage> {
+  // Convert content to appropriate format for backend
+  const contentValue = typeof content === 'string' ? content : content;
+  
+  return await invoke<ConversationMessage>("db_add_ai_message", { 
+    input: { 
+      conversation_id: conversationId, 
+      role, 
+      content: contentValue 
+    } 
+  });
 }
 
 export async function streamChat(conversationId: string, userMessage: string, model?: string): Promise<void> {
@@ -60,15 +92,19 @@ export async function updateConversationTitle(id: string, title: string): Promis
 }
 
 export async function generateConversationTitle(id: string, model?: string): Promise<Conversation> {
-  return await invoke<Conversation>("db_generate_conversation_title", { conversationId: id, conversation_id: id, model });
+  return await invoke<Conversation>("generate_conversation_title", { input: { conversation_id: id, model } });
 }
 
 export async function getConversation(id: string): Promise<Conversation> {
-  return await invoke<Conversation>("db_get_conversation", { conversationId: id, conversation_id: id });
+  return await invoke<Conversation>("db_get_conversation", { id });
 }
 
 export async function updateConversationModel(id: string, model: string): Promise<void> {
-  await invoke("db_update_conversation_model", { conversationId: id, conversation_id: id, model });
+  await invoke("db_update_conversation_model", { id, model });
+}
+
+export async function saveCompleteMessage(conversationId: string, message: any): Promise<void> {
+  await invoke("db_save_complete_message", { input: { conversation_id: conversationId, message } });
 }
 
 

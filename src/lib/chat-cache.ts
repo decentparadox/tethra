@@ -1,7 +1,7 @@
-import { type Message, type Conversation } from './chat';
+import { type LegacyMessage, type Conversation } from './chat';
 
 interface CacheEntry {
-  messages: Message[];
+  messages: LegacyMessage[];
   lastFetched: number;
   isComplete: boolean;
 }
@@ -22,7 +22,7 @@ class ChatCache {
   }
 
   // Cache messages for a conversation
-  setMessages(conversationId: string, messages: Message[], isComplete = true) {
+  setMessages(conversationId: string, messages: LegacyMessage[], isComplete = true) {
     this.cache.set(conversationId, {
       messages: [...messages],
       lastFetched: Date.now(),
@@ -31,7 +31,7 @@ class ChatCache {
   }
 
   // Get cached messages if available and fresh
-  getMessages(conversationId: string): Message[] | null {
+  getMessages(conversationId: string): LegacyMessage[] | null {
     const entry = this.cache.get(conversationId);
     if (!entry) return null;
 
@@ -45,7 +45,7 @@ class ChatCache {
   }
 
   // Add a single message to cache (for optimistic updates)
-  addMessage(conversationId: string, message: Message) {
+  addMessage(conversationId: string, message: LegacyMessage) {
     const entry = this.cache.get(conversationId);
     if (entry) {
       entry.messages.push(message);
@@ -88,7 +88,7 @@ class ChatCache {
   // Preload conversations in background
   async preloadConversations(
     conversationIds: string[], 
-    getMessagesFunc: (id: string) => Promise<Message[]>,
+    getMessagesFunc: (id: string) => Promise<LegacyMessage[]>,
     maxConcurrent = 2
   ) {
     // Filter out already cached or currently preloading conversations

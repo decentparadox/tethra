@@ -9,24 +9,28 @@ type Settings = {
   gemini_api_key?: string | null;
   groq_api_key?: string | null;
   openrouter_api_key?: string | null;
+  deepseek_api_key?: string | null;
   openai_base_url?: string | null;
   anthropic_base_url?: string | null;
   gemini_base_url?: string | null;
   groq_base_url?: string | null;
   openrouter_base_url?: string | null;
+  deepseek_base_url?: string | null;
   openai_models?: string[] | null;
   anthropic_models?: string[] | null;
   gemini_models?: string[] | null;
   groq_models?: string[] | null;
   openrouter_models?: string[] | null;
+  deepseek_models?: string[] | null;
   openai_enabled?: boolean | null;
   anthropic_enabled?: boolean | null;
   gemini_enabled?: boolean | null;
   groq_enabled?: boolean | null;
   openrouter_enabled?: boolean | null;
+  deepseek_enabled?: boolean | null;
 };
 
-type ProviderKey = "OpenAI" | "Anthropic" | "Gemini" | "Groq" | "OpenRouter";
+type ProviderKey = "OpenAI" | "Anthropic" | "Gemini" | "Groq" | "OpenRouter" | "DeepSeek";
 
 const providerMeta: Record<ProviderKey, {
   keyField: keyof Settings;
@@ -69,6 +73,13 @@ const providerMeta: Record<ProviderKey, {
     modelsField: "openrouter_models",
     placeholder: "or-...",
     docs: "https://openrouter.ai/docs",
+  },
+  DeepSeek: {
+    keyField: "deepseek_api_key",
+    baseUrlField: "deepseek_base_url",
+    modelsField: "deepseek_models",
+    placeholder: "sk-...",
+    docs: "https://platform.deepseek.com/docs",
   },
 };
 
@@ -223,6 +234,8 @@ export default function ProvidersTab() {
         return "mistral"; // fallback icon for Groq
       case "OpenRouter":
         return "openrouter";
+      case "DeepSeek":
+        return "deepseek"
       default:
         return "openai";
     }
@@ -239,7 +252,7 @@ export default function ProvidersTab() {
             </button>
           </div>
           <div className="divide-y divide-white/10 rounded-lg border border-white/10">
-            {(["OpenAI","Anthropic","Gemini","Groq","OpenRouter"] as ProviderKey[]).map((p) => {
+            {(["OpenAI","Anthropic","Gemini","Groq","OpenRouter","DeepSeek"] as ProviderKey[]).map((p) => {
               const enabledField = `${p.toLowerCase()}_enabled` as keyof Settings;
               const modelsField = providerMeta[p].modelsField;
               const modelCount = ((settings[modelsField] as string[] | null) ?? []).length;

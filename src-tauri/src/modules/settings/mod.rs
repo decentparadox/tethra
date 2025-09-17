@@ -44,22 +44,26 @@ pub struct AppSettings {
     pub gemini_api_key: Option<String>,
     pub groq_api_key: Option<String>,
     pub openrouter_api_key: Option<String>,
+    pub deepseek_api_key: Option<String>,
     pub openai_base_url: Option<String>,
     pub anthropic_base_url: Option<String>,
     pub gemini_base_url: Option<String>,
     pub groq_base_url: Option<String>,
     pub openrouter_base_url: Option<String>,
+    pub deepseek_base_url: Option<String>,
     pub openai_models: Option<Vec<String>>,
     pub anthropic_models: Option<Vec<String>>,
     pub gemini_models: Option<Vec<String>>,
     pub groq_models: Option<Vec<String>>,
     pub openrouter_models: Option<Vec<String>>,
+    pub deepseek_models: Option<Vec<String>>,
     // Provider toggles
     pub openai_enabled: Option<bool>,
     pub anthropic_enabled: Option<bool>,
     pub gemini_enabled: Option<bool>,
     pub groq_enabled: Option<bool>,
     pub openrouter_enabled: Option<bool>,
+    pub deepseek_enabled: Option<bool>,
     pub appearance: Option<AppearanceSettings>,
 }
 
@@ -114,21 +118,25 @@ pub fn merge_settings(base: &mut AppSettings, update: AppSettings) {
     if update.gemini_api_key.is_some() { base.gemini_api_key = update.gemini_api_key; }
     if update.groq_api_key.is_some() { base.groq_api_key = update.groq_api_key; }
     if update.openrouter_api_key.is_some() { base.openrouter_api_key = update.openrouter_api_key; }
+    if update.deepseek_api_key.is_some() { base.deepseek_api_key = update.deepseek_api_key; }
     if update.openai_base_url.is_some() { base.openai_base_url = update.openai_base_url; }
     if update.anthropic_base_url.is_some() { base.anthropic_base_url = update.anthropic_base_url; }
     if update.gemini_base_url.is_some() { base.gemini_base_url = update.gemini_base_url; }
     if update.groq_base_url.is_some() { base.groq_base_url = update.groq_base_url; }
     if update.openrouter_base_url.is_some() { base.openrouter_base_url = update.openrouter_base_url; }
+    if update.deepseek_base_url.is_some() { base.deepseek_base_url = update.deepseek_base_url; }
     if update.openai_models.is_some() { base.openai_models = update.openai_models; }
     if update.anthropic_models.is_some() { base.anthropic_models = update.anthropic_models; }
     if update.gemini_models.is_some() { base.gemini_models = update.gemini_models; }
     if update.groq_models.is_some() { base.groq_models = update.groq_models; }
     if update.openrouter_models.is_some() { base.openrouter_models = update.openrouter_models; }
+    if update.deepseek_models.is_some() { base.deepseek_models = update.deepseek_models; }
     if update.openai_enabled.is_some() { base.openai_enabled = update.openai_enabled; }
     if update.anthropic_enabled.is_some() { base.anthropic_enabled = update.anthropic_enabled; }
     if update.gemini_enabled.is_some() { base.gemini_enabled = update.gemini_enabled; }
     if update.groq_enabled.is_some() { base.groq_enabled = update.groq_enabled; }
     if update.openrouter_enabled.is_some() { base.openrouter_enabled = update.openrouter_enabled; }
+    if update.deepseek_enabled.is_some() { base.deepseek_enabled = update.deepseek_enabled; }
     if let Some(up) = update.appearance {
         let current = base.appearance.get_or_insert_with(Default::default);
         if up.theme.is_some() { current.theme = up.theme; }
@@ -160,7 +168,10 @@ pub fn setup_provider_env_for_model(app: &tauri::AppHandle, model: &str) {
     } else if model.contains("groq") || model.starts_with("gemma-") || model.starts_with("llama-") {
         if let Some(k) = settings.groq_api_key.clone() { std::env::set_var("GROQ_API_KEY", k); }
         if let Some(url) = settings.groq_base_url { std::env::set_var("GROQ_BASE_URL", url); }
-    } else if is_openrouter_model(model) {
+    } else if model.starts_with("deepseek-") || model.starts_with("deepseek/") {
+        if let Some(k) = settings.deepseek_api_key.clone() { std::env::set_var("DEEPSEEK_API_KEY", k); }
+        if let Some(url) = settings.deepseek_base_url { std::env::set_var("DEEPSEEK_BASE_URL", url); }
+    } else if is_openrouter_model(model) || model.contains(":") {
         if let Some(k) = settings.openrouter_api_key.clone() { std::env::set_var("OPENROUTER_API_KEY", k); }
         if let Some(url) = settings.openrouter_base_url { std::env::set_var("OPENROUTER_BASE_URL", url); }
     }
@@ -243,4 +254,74 @@ pub async fn load_settings(app: tauri::AppHandle) -> Result<Option<SettingsFileL
 pub async fn has_settings(app: tauri::AppHandle) -> Result<bool, String> {
     let path = settings_path(&app)?;
     Ok(path.exists())
+}
+
+// API Key management commands
+#[tauri::command]
+pub async fn get_api_key(app: tauri::AppHandle, provider: String) -> Result<Option<String>, String> {
+    let settings = read_settings(&app)?;
+    let api_key = match provider.as_str() {
+        "openai" => settings.openai_api_key,
+        "anthropic" => settings.anthropic_api_key,
+        "google" | "gemini" => settings.gemini_api_key,
+        "groq" => settings.groq_api_key,
+        "openrouter" => settings.openrouter_api_key,
+        "deepseek" => settings.deepseek_api_key,
+        _ => None,
+    };
+    Ok(api_key)
+}
+
+#[tauri::command]
+pub async fn set_api_key(app: tauri::AppHandle, provider: String, api_key: String) -> Result<(), String> {
+    let mut settings = read_settings(&app)?;
+    match provider.as_str() {
+        "openai" => settings.openai_api_key = Some(api_key),
+        "anthropic" => settings.anthropic_api_key = Some(api_key),
+        "google" | "gemini" => settings.gemini_api_key = Some(api_key),
+        "groq" => settings.groq_api_key = Some(api_key),
+        "openrouter" => settings.openrouter_api_key = Some(api_key),
+        "deepseek" => settings.deepseek_api_key = Some(api_key),
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    }
+    write_settings(&app, &settings)
+}
+
+#[tauri::command]
+pub async fn get_provider_config(app: tauri::AppHandle, provider: String) -> Result<ProviderConfig, String> {
+    let settings = read_settings(&app)?;
+    let config = match provider.as_str() {
+        "openai" => ProviderConfig {
+            api_key: settings.openai_api_key,
+            base_url: settings.openai_base_url,
+        },
+        "anthropic" => ProviderConfig {
+            api_key: settings.anthropic_api_key,
+            base_url: settings.anthropic_base_url,
+        },
+        "google" | "gemini" => ProviderConfig {
+            api_key: settings.gemini_api_key,
+            base_url: settings.gemini_base_url,
+        },
+        "groq" => ProviderConfig {
+            api_key: settings.groq_api_key,
+            base_url: None, // Groq doesn't have configurable base URL
+        },
+        "openrouter" => ProviderConfig {
+            api_key: settings.openrouter_api_key,
+            base_url: None, // OpenRouter has fixed base URL
+        },
+        "deepseek" => ProviderConfig {
+            api_key: settings.deepseek_api_key,
+            base_url: settings.deepseek_base_url,
+        },
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+    Ok(config)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
 }
