@@ -33,7 +33,7 @@ export function AIMessage({
         )}
       </div>
       <div className="w-full text-white">
-        {console.log("Message", message)}
+        {/* {console.log("Message", message)} */}
         {/* Handle AI SDK message content structure */}
         {/* {message.content && (
           <Response>{message.content}</Response>

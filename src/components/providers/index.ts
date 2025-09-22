@@ -1,10 +1,10 @@
-import { initializeGoogle } from "./google";
-import { initializeOpenAI } from "./openai";
-import { initializeAnthropic } from "./anthropic";
-import { initializeGroq } from "./groq";
-import { initializeOpenRouter } from "./openrouter";
-import { initializeOllama } from "./ollama";
-import { initializeDeepseek } from "./deepseek";
+import { initializeGoogle, fetchGoogleModels } from "./google";
+import { initializeOpenAI, fetchOpenAIModels } from "./openai";
+import { initializeAnthropic, fetchAnthropicModels } from "./anthropic";
+import { initializeGroq, fetchGroqModels } from "./groq";
+import { initializeOpenRouter, fetchOpenRouterModels } from "./openrouter";
+import { initializeOllama, fetchOllamaModels } from "./ollama";
+import { initializeDeepseek, fetchDeepSeekModels } from "./deepseek";
 import { google } from "./google";
 import { openai } from "./openai";
 import { anthropic } from "./anthropic";
@@ -19,6 +19,7 @@ export interface ModelProvider {
   models: string[];
   initialize: () => Promise<void>;
   getInstance: (model: string) => any;
+  fetchModels?: () => Promise<string[]>;
 }
 
 export const PROVIDERS: Record<string, ModelProvider> = {
@@ -26,13 +27,14 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     name: "google",
     displayName: "Google Gemini",
     models: [
-      "gemini-2.0-flash",
+      "gemini-2.0-flash-exp",
       "gemini-1.5-flash",
       "gemini-1.5-pro",
       "gemini-1.0-pro",
     ],
     initialize: initializeGoogle,
     getInstance: google,
+    fetchModels: fetchGoogleModels,
   },
   ollama: {
     name: "ollama",
@@ -46,6 +48,7 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     ],
     initialize: initializeOllama,
     getInstance: ollama,
+    fetchModels: fetchOllamaModels,
   },
   openai: {
     name: "openai",
@@ -59,6 +62,7 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     ],
     initialize: initializeOpenAI,
     getInstance: openai,
+    fetchModels: fetchOpenAIModels,
   },
   anthropic: {
     name: "anthropic",
@@ -72,6 +76,7 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     ],
     initialize: initializeAnthropic,
     getInstance: anthropic,
+    fetchModels: fetchAnthropicModels,
   },
   groq: {
     name: "groq",
@@ -87,19 +92,27 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     ],
     initialize: initializeGroq,
     getInstance: groq,
+    fetchModels: fetchGroqModels,
   },
   openrouter: {
     name: "openrouter",
     displayName: "OpenRouter",
     models: [
       "anthropic/claude-3.5-sonnet",
+      "anthropic/claude-3-haiku",
       "openai/gpt-4o",
+      "openai/gpt-4o-mini",
       "google/gemini-pro-1.5",
+      "google/gemini-flash-1.5",
       "meta-llama/llama-3.2-90b-instruct",
+      "meta-llama/llama-3.1-405b-instruct",
       "mistralai/mistral-large",
+      "mistralai/mistral-7b-instruct",
+      "mistralai/mistral-small-3.2-24b-instruct",
     ],
     initialize: initializeOpenRouter,
     getInstance: openrouter,
+    fetchModels: fetchOpenRouterModels,
   },
   deepseek: {
     name: "deepseek",
@@ -113,6 +126,7 @@ export const PROVIDERS: Record<string, ModelProvider> = {
     ],
     initialize: initializeDeepseek,
     getInstance: deepseek,
+    fetchModels: fetchDeepSeekModels,
   },
 };
 
@@ -176,4 +190,42 @@ export async function getModelInstance(model: string) {
     console.error(`Failed to get model instance for ${model}:`, error);
     throw error;
   }
+}
+
+export async function fetchProviderModels(providerName: string): Promise<string[]> {
+  const provider = PROVIDERS[providerName];
+  if (!provider) {
+    throw new Error(`Unknown provider: ${providerName}`);
+  }
+
+  try {
+    if (provider.fetchModels) {
+      const dynamicModels = await provider.fetchModels();
+      if (dynamicModels && dynamicModels.length > 0) {
+        return dynamicModels;
+      }
+    }
+    // Fallback to hardcoded models if dynamic fetch fails or is not available
+    return provider.models;
+  } catch (error) {
+    console.warn(`Failed to fetch dynamic models for ${providerName}, using fallback:`, error);
+    return provider.models;
+  }
+}
+
+export async function getAllAvailableModels(): Promise<{ [providerName: string]: string[] }> {
+  const allModels: { [providerName: string]: string[] } = {};
+  
+  const fetchPromises = Object.keys(PROVIDERS).map(async (providerName) => {
+    try {
+      const models = await fetchProviderModels(providerName);
+      allModels[providerName] = models;
+    } catch (error) {
+      console.warn(`Failed to fetch models for ${providerName}:`, error);
+      allModels[providerName] = PROVIDERS[providerName].models;
+    }
+  });
+
+  await Promise.all(fetchPromises);
+  return allModels;
 }

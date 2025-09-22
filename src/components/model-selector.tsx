@@ -12,7 +12,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { listChatModels, type ListedModel, getConversation, updateConversationModel } from "../lib/chat";
-import { PROVIDERS } from "../components/providers";
+import { PROVIDERS, fetchProviderModels } from "../components/providers";
 import { getCachedProviders } from "../lib/api-keys";
 import ModelIcon, { type ModelType } from "@/components/model-icon";
 
@@ -47,33 +47,65 @@ export default function ModelSelector({ conversationId }: { conversationId?: str
   const [models, setModels] = useState<ListedModel[]>([]);
   const [selected, setSelected] = useState<string | undefined>(undefined);
 
-  // Get available AI SDK models from providers
-  const aiSdkModels = useMemo(() => {
-    const cachedProviders = getCachedProviders();
-    const availableModels: ListedModel[] = [];
+  // Get available AI SDK models from providers (will be loaded dynamically)
+  const [aiSdkModels, setAiSdkModels] = useState<ListedModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
 
-    // Add provider models if they have cached API keys
-    Object.entries(PROVIDERS).forEach(([providerName, provider]) => {
-      if (cachedProviders.includes(providerName)) {
-        provider.models.forEach(model => {
-          availableModels.push({
-            model,
-            adapter_kind: provider.displayName,
-            enabled: true,
-          });
+  // Load AI SDK models dynamically
+  useEffect(() => {
+    (async () => {
+      try {
+        setModelsLoading(true);
+        const cachedProviders = getCachedProviders();
+        const availableModels: ListedModel[] = [];
+
+        // Fetch models dynamically for each provider that has API keys
+        const modelFetchPromises = cachedProviders.map(async (providerName) => {
+          const provider = PROVIDERS[providerName];
+          if (provider) {
+            try {
+              const dynamicModels = await fetchProviderModels(providerName);
+              dynamicModels.forEach(model => {
+                availableModels.push({
+                  model,
+                  adapter_kind: provider.displayName,
+                  enabled: true,
+                });
+              });
+            } catch (error) {
+              console.warn(`Failed to fetch models for ${providerName}:`, error);
+              // Fallback to hardcoded models
+              provider.models.forEach(model => {
+                availableModels.push({
+                  model,
+                  adapter_kind: provider.displayName,
+                  enabled: true,
+                });
+              });
+            }
+          }
         });
+
+        await Promise.all(modelFetchPromises);
+        
+        console.log('Dynamic AI SDK Models:', availableModels);
+        console.log('Cached Providers:', cachedProviders);
+        
+        setAiSdkModels(availableModels);
+      } catch (error) {
+        console.error('Failed to load AI SDK models:', error);
+      } finally {
+        setModelsLoading(false);
       }
-    });
-
-    console.log('AI SDK Models:', availableModels);
-    console.log('Cached Providers:', cachedProviders);
-
-    return availableModels;
+    })();
   }, []);
 
   useEffect(() => {
     (async () => {
       try {
+        // Wait for AI SDK models to load
+        if (modelsLoading) return;
+
         // First, try to initialize Google provider to ensure it's available
         try {
           const { initializeGoogle } = await import("../components/providers/google");
@@ -117,7 +149,7 @@ export default function ModelSelector({ conversationId }: { conversationId?: str
         }
       } catch {}
     })();
-  }, []);
+  }, [aiSdkModels, modelsLoading]);
 
   // Load conversation's stored model when conversationId changes
   useEffect(() => {

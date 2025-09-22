@@ -29,6 +29,7 @@ pub fn run() {
             open_path_in_explorer,
             reveal_path,
             reset_appearance,
+            get_username,
             db_list_conversations,
             db_get_messages,
             db_create_conversation,

@@ -168,3 +168,26 @@ pub async fn reveal_path(path: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_username() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::env;
+        env::var("USERNAME").or_else(|_| env::var("USER")).map_err(|e| format!("Failed to get username: {}", e))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::env;
+        env::var("USER").map_err(|e| format!("Failed to get username: {}", e))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::env;
+        env::var("USER").or_else(|_| env::var("LOGNAME")).map_err(|e| format!("Failed to get username: {}", e))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Unsupported platform".to_string())
+    }
+}

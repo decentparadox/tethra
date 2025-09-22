@@ -38,9 +38,9 @@ if (rootElement && !rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <RouterProvider router={router} />
-      {process.env.NODE_ENV === 'development' && (
+      {/* {process.env.NODE_ENV === 'development' && (
         <AIDevtools />
-      )}
+      )} */}
     </StrictMode>,
   )
 }

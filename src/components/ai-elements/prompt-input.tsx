@@ -22,7 +22,7 @@ import {
   Loader2Icon,
   PaperclipIcon,
   PlusIcon,
-  SendIcon,
+  SendHorizontal,
   SquareIcon,
   XIcon,
 } from "lucide-react";
@@ -434,7 +434,8 @@ export const PromptInput = ({
       />
       <form
         className={cn(
-          "w-full divide-y overflow-hidden rounded-xl border bg-background shadow-sm",
+          "w-full divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 shadow-sm",
+          "bg-white/5 backdrop-blur-sm",
           className
         )}
         onSubmit={handleSubmit}
@@ -487,7 +488,7 @@ export const PromptInputTextarea = ({
       className={cn(
         "w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0",
         "field-sizing-content bg-transparent dark:bg-transparent",
-        "max-h-48 min-h-16",
+        "max-h-48 min-h-16 text-white placeholder:text-white/70",
         "focus-visible:ring-0",
         className
       )}
@@ -509,7 +510,7 @@ export const PromptInputToolbar = ({
   ...props
 }: PromptInputToolbarProps) => (
   <div
-    className={cn("flex items-center justify-between p-1", className)}
+    className={cn("flex items-center justify-between p-1 bg-transparent", className)}
     {...props}
   />
 );
@@ -612,7 +613,7 @@ export const PromptInputSubmit = ({
   children,
   ...props
 }: PromptInputSubmitProps) => {
-  let Icon = <SendIcon className="size-4" />;
+  let Icon = <SendHorizontal className="size-4" />;
 
   if (status === "submitted") {
     Icon = <Loader2Icon className="size-4 animate-spin" />;

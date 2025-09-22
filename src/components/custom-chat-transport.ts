@@ -37,7 +37,31 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const result = streamText({
       model: this.model,
       messages: convertToModelMessages(options.messages),
-      
+      onError({ error }) {
+        console.error(error); // your error logging logic here
+      },
+      onFinish({ text, finishReason, usage, response, steps, totalUsage }) {
+        // Clear the completion timeout since we finished normally
+        clearTimeout(completionTimeout);
+
+        // your own logic, e.g. for saving the chat history or recording usage
+
+        const messages = response.messages; // messages that were generated
+        console.log('Messages:', messages);
+        console.log('Finish reason:', finishReason);
+        console.log('Usage:', usage);
+        console.log('Steps:', steps);
+        console.log('Total usage:', totalUsage);
+
+        // Ensure the last assistant message is marked as complete
+        // This helps with message saving when streaming gets cut off
+        setTimeout(() => {
+          const event = new CustomEvent('ai-response-finished', {
+            detail: { finishReason, usage, totalUsage }
+          });
+          window.dispatchEvent(event);
+        }, 100);
+      },
       abortSignal: options.abortSignal,
       toolChoice: "auto",
       providerOptions: {
@@ -47,12 +71,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           google: {
             thinkingConfig: {
               includeThoughts: true,
+              thinkingBudget: 8192,
             },
           },
       },
     });
 
     console.log("result from ai sdk", result)
+    console.log('Cached tokens:', result.providerMetadata);
+
+    // Set a timeout to force completion if streaming takes too long
+    const completionTimeout = setTimeout(() => {
+      console.log('Forcing completion due to timeout');
+      const event = new CustomEvent('ai-response-finished', {
+        detail: { finishReason: 'timeout', usage: {}, totalUsage: {} }
+      });
+      window.dispatchEvent(event);
+    }, 30000); // 30 second timeout
 
     // Only enable reasoning for models that support it (like OpenAI's o1 models)
     const supportsReasoning = this.modelSupportsReasoning();
