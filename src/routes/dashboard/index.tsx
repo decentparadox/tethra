@@ -4,14 +4,14 @@ import GlobalShortcuts from "@/components/global-shortcuts";
 import DashboardLayout from "@/components/dashboard";
 
 export const Route = createFileRoute("/dashboard/")({
-  component: RouteComponent,
+	component: RouteComponent,
 });
 
 function RouteComponent() {
-  return (
-    <DashboardLayout>
-      <GlobalShortcuts />
-      <ChatView />
-    </DashboardLayout>
-  );
+	return (
+		<DashboardLayout>
+			<GlobalShortcuts />
+			<ChatView />
+		</DashboardLayout>
+	);
 }

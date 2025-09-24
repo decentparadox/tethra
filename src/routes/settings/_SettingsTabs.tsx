@@ -4,158 +4,226 @@ import ProvidersTab from "./_ProvidersTab";
 import GeneralTab from "./_GeneralTab";
 import AppearanceTab from "./_AppearanceTab";
 
-
 export default function SettingsTabs() {
-  // Hardware info and usage monitoring removed as they were unused
-  return (
-    <div className="flex w-full h-full text-white border-t border-border/70 no-scrollbar">
-      
-      <Tabs defaultValue="general" className="flex w-full flex-row items-start justify-start gap-0">
-      <div className="border-r border-border/70 h-full">
-        <TabsList className="w-56 shrink-0 p-4 space-y-2 h-full flex flex-col bg-transparent">
-          <TabsTrigger value="general" className="justify-start w-full">General</TabsTrigger>
-          <TabsTrigger value="appearance" className="justify-start w-full">Appearance</TabsTrigger>
-          <TabsTrigger value="privacy" className="justify-start w-full">Privacy</TabsTrigger>
-          <TabsTrigger value="providers" className="justify-start w-full">Model Providers</TabsTrigger>
-          <TabsTrigger value="shortcuts" className="justify-start w-full">Shortcuts</TabsTrigger>
-          <TabsTrigger value="hardware" className="justify-start w-full">Hardware</TabsTrigger>
-          
-        </TabsList>
-        </div>
-        
+	// Hardware info and usage monitoring removed as they were unused
+	return (
+		<div className="flex w-full h-full text-white border-t border-border/70 no-scrollbar">
+			<Tabs
+				defaultValue="general"
+				className="flex w-full flex-row items-start justify-start gap-0"
+			>
+				<div className="border-r border-border/70 h-full">
+					<TabsList className="w-56 shrink-0 p-4 space-y-2 h-full flex flex-col bg-transparent">
+						<TabsTrigger value="general" className="justify-start w-full">
+							General
+						</TabsTrigger>
+						<TabsTrigger value="appearance" className="justify-start w-full">
+							Appearance
+						</TabsTrigger>
+						<TabsTrigger value="privacy" className="justify-start w-full">
+							Privacy
+						</TabsTrigger>
+						<TabsTrigger value="providers" className="justify-start w-full">
+							Model Providers
+						</TabsTrigger>
+						<TabsTrigger value="shortcuts" className="justify-start w-full">
+							Shortcuts
+						</TabsTrigger>
+						<TabsTrigger value="hardware" className="justify-start w-full">
+							Hardware
+						</TabsTrigger>
+					</TabsList>
+				</div>
 
-        <div className="flex-1 min-h-screen min-w-0 w-full p-6 space-y-6">
-          <TabsContent value="general" className="m-0 flex flex-col gap-2">
-            <h1 className="text-2xl font-mondwest mb-4">General</h1>
-            <GeneralTab />
-          </TabsContent>
+				<div className="flex-1 min-h-screen min-w-0 w-full p-6 space-y-6">
+					<TabsContent value="general" className="m-0 flex flex-col gap-2">
+						<h1 className="text-2xl font-mondwest mb-4">General</h1>
+						<GeneralTab />
+					</TabsContent>
 
-          <TabsContent value="appearance" className="m-0 flex flex-col gap-4">
-            <h1 className="text-2xl font-mondwest mb-2">Appearance</h1>
-            <AppearanceTab />
-          </TabsContent>
+					<TabsContent value="appearance" className="m-0 flex flex-col gap-4">
+						<h1 className="text-2xl font-mondwest mb-2">Appearance</h1>
+						<AppearanceTab />
+					</TabsContent>
 
-          <TabsContent value="privacy" className="m-0 flex flex-col gap-2">
-            <h1 className="text-2xl font-mondwest mb-4">Privacy</h1>
-            <div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3 relative">
-              <div className="absolute top-4 right-4">
-                <label className="inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" defaultChecked />
-                  <div className="w-9 h-5 bg-white/10 peer-checked:bg-white/20 rounded-full relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white/80 after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
-                </label>
-              </div>
-              <h2 className="text-lg font-mondwest">Analytics</h2>
-              <div className="space-y-2 text-sm opacity-90">
-                <div className="font-medium">Help us improve</div>
-                <p>To help us improve Tethra, you can share anonymous data like feature usage and user counts. We never collect your chats or personal information.</p>
-              </div>
-              <div className="my-2 border-t border-white/10" />
-              <div className="space-y-2 text-sm opacity-90">
-                <p>You have full control over your data. Learn more in our Privacy Policy.</p>
-                <p>To improve Tethra, we need to understand how it's used—but only with your help. You can change this setting anytime.</p>
-                <p>Your choice here won't change our core privacy promises:</p>
-                <ul className="list-disc pl-6 space-y-1">
-                  <li><span className="font-medium">Your conversations stay private and on your device</span></li>
-                  <li>We never collect your personal information or chat content</li>
-                  <li>All data sharing is anonymous and aggregated</li>
-                  <li>You can opt out anytime without losing functionality</li>
-                  <li>We're transparent about what we collect and why</li>
-                </ul>
-              </div>
-            </div>
-          </TabsContent>
+					<TabsContent value="privacy" className="m-0 flex flex-col gap-2">
+						<h1 className="text-2xl font-mondwest mb-4">Privacy</h1>
+						<div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3 relative">
+							<div className="absolute top-4 right-4">
+								<label className="inline-flex items-center cursor-pointer">
+									<input
+										type="checkbox"
+										className="sr-only peer"
+										defaultChecked
+									/>
+									<div className="w-9 h-5 bg-white/10 peer-checked:bg-white/20 rounded-full relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white/80 after:rounded-full after:transition-all peer-checked:after:translate-x-4"></div>
+								</label>
+							</div>
+							<h2 className="text-lg font-mondwest">Analytics</h2>
+							<div className="space-y-2 text-sm opacity-90">
+								<div className="font-medium">Help us improve</div>
+								<p>
+									To help us improve Tethra, you can share anonymous data like
+									feature usage and user counts. We never collect your chats or
+									personal information.
+								</p>
+							</div>
+							<div className="my-2 border-t border-white/10" />
+							<div className="space-y-2 text-sm opacity-90">
+								<p>
+									You have full control over your data. Learn more in our
+									Privacy Policy.
+								</p>
+								<p>
+									To improve Tethra, we need to understand how it's used—but
+									only with your help. You can change this setting anytime.
+								</p>
+								<p>Your choice here won't change our core privacy promises:</p>
+								<ul className="list-disc pl-6 space-y-1">
+									<li>
+										<span className="font-medium">
+											Your conversations stay private and on your device
+										</span>
+									</li>
+									<li>
+										We never collect your personal information or chat content
+									</li>
+									<li>All data sharing is anonymous and aggregated</li>
+									<li>You can opt out anytime without losing functionality</li>
+									<li>We're transparent about what we collect and why</li>
+								</ul>
+							</div>
+						</div>
+					</TabsContent>
 
-          
+					<TabsContent value="shortcuts" className="m-0 flex flex-col gap-4">
+						<h1 className="text-2xl font-mondwest mb-2">Shortcuts</h1>
 
-          <TabsContent value="shortcuts" className="m-0 flex flex-col gap-4">
-            <h1 className="text-2xl font-mondwest mb-2">Shortcuts</h1>
+						<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+							<h2 className="text-lg font-mondwest mb-3">Application</h2>
+							{[
+								{
+									title: "New Chat",
+									desc: "Create a new chat.",
+									keys: ["Ctrl", "N"],
+								},
+								{
+									title: "Toggle Sidebar",
+									desc: "Show or hide the sidebar.",
+									keys: ["Ctrl", "B"],
+								},
+								{
+									title: "Zoom In",
+									desc: "Increase the zoom level.",
+									keys: ["Ctrl", "+"],
+								},
+								{
+									title: "Zoom Out",
+									desc: "Decrease the zoom level.",
+									keys: ["Ctrl", "-"],
+								},
+							].map((row, idx) => (
+								<div key={row.title}>
+									{idx > 0 && <div className="my-2 border-t border-white/10" />}
+									<div className="flex items-start justify-between py-1">
+										<div>
+											<div className="font-medium">{row.title}</div>
+											<div className="text-xs opacity-70">{row.desc}</div>
+										</div>
+										<div className="flex items-center gap-1">
+											{row.keys.map((k, i) => (
+												<span
+													key={`${row.title}-${i}`}
+													className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10"
+												>
+													{k}
+												</span>
+											))}
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
 
-            <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-              <h2 className="text-lg font-mondwest mb-3">Application</h2>
-              {[{
-                title:'New Chat', desc:'Create a new chat.', keys:['Ctrl','N']
-              },{
-                title:'Toggle Sidebar', desc:'Show or hide the sidebar.', keys:['Ctrl','B']
-              },{
-                title:'Zoom In', desc:'Increase the zoom level.', keys:['Ctrl','+']
-              },{
-                title:'Zoom Out', desc:'Decrease the zoom level.', keys:['Ctrl','-']
-              }].map((row, idx)=> (
-                <div key={row.title}>
-                  {idx>0 && <div className="my-2 border-t border-white/10" />}
-                  <div className="flex items-start justify-between py-1">
-                    <div>
-                      <div className="font-medium">{row.title}</div>
-                      <div className="text-xs opacity-70">{row.desc}</div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {row.keys.map((k,i)=> (
-                        <span key={`${row.title}-${i}`} className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10">{k}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+						<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+							<h2 className="text-lg font-mondwest mb-3">Chat</h2>
+							{[
+								{
+									title: "Send Message",
+									desc: "Send the current message.",
+									keys: ["Enter"],
+								},
+								{
+									title: "New Line",
+									desc: "Insert a new line.",
+									keys: ["Shift", "+", "Enter"],
+								},
+							].map((row, idx) => (
+								<div key={row.title}>
+									{idx > 0 && <div className="my-2 border-t border-white/10" />}
+									<div className="flex items-start justify-between py-1">
+										<div>
+											<div className="font-medium">{row.title}</div>
+											<div className="text-xs opacity-70">{row.desc}</div>
+										</div>
+										<div className="flex items-center gap-1">
+											{row.keys.map((k, i) => (
+												<span
+													key={`${row.title}-${i}`}
+													className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10"
+												>
+													{k}
+												</span>
+											))}
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
 
-            <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-              <h2 className="text-lg font-mondwest mb-3">Chat</h2>
-              {[{
-                title:'Send Message', desc:'Send the current message.', keys:['Enter']
-              },{
-                title:'New Line', desc:'Insert a new line.', keys:['Shift','+','Enter']
-              }].map((row, idx)=> (
-                <div key={row.title}>
-                  {idx>0 && <div className="my-2 border-t border-white/10" />}
-                  <div className="flex items-start justify-between py-1">
-                    <div>
-                      <div className="font-medium">{row.title}</div>
-                      <div className="text-xs opacity-70">{row.desc}</div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {row.keys.map((k,i)=> (
-                        <span key={`${row.title}-${i}`} className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10">{k}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+						<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+							<h2 className="text-lg font-mondwest mb-3">Navigation</h2>
+							{[
+								{
+									title: "Go to Settings",
+									desc: "Open settings.",
+									keys: ["Ctrl", ","],
+								},
+							].map((row) => (
+								<div key={row.title}>
+									<div className="flex items-start justify-between py-1">
+										<div>
+											<div className="font-medium">{row.title}</div>
+											<div className="text-xs opacity-70">{row.desc}</div>
+										</div>
+										<div className="flex items-center gap-1">
+											{row.keys.map((k, i) => (
+												<span
+													key={`${row.title}-${i}`}
+													className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10"
+												>
+													{k}
+												</span>
+											))}
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					</TabsContent>
 
-            <div className="rounded-lg border border-white/10 bg-white/5 p-4">
-              <h2 className="text-lg font-mondwest mb-3">Navigation</h2>
-              {[{
-                title:'Go to Settings', desc:'Open settings.', keys:['Ctrl',',']
-              }].map((row)=> (
-                <div key={row.title}>
-                  <div className="flex items-start justify-between py-1">
-                    <div>
-                      <div className="font-medium">{row.title}</div>
-                      <div className="text-xs opacity-70">{row.desc}</div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {row.keys.map((k,i)=> (
-                        <span key={`${row.title}-${i}`} className="px-2 py-0.5 text-xs rounded-md bg-white/10 border border-white/10">{k}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
+					<TabsContent value="hardware" className="m-0 flex flex-col gap-4">
+						<h1 className="text-2xl font-mondwest mb-2">Hardware</h1>
+						<HardwareTab />
+					</TabsContent>
 
-          <TabsContent value="hardware" className="m-0 flex flex-col gap-4">
-            <h1 className="text-2xl font-mondwest mb-2">Hardware</h1>
-            <HardwareTab />
-          </TabsContent>
+					<TabsContent value="providers" className="m-0 flex flex-col gap-4">
+						<h1 className="text-2xl font-mondwest mb-2">Model Providers</h1>
+						<ProvidersTab />
+					</TabsContent>
 
-          <TabsContent value="providers" className="m-0 flex flex-col gap-4">
-            <h1 className="text-2xl font-mondwest mb-2">Model Providers</h1>
-            <ProvidersTab />
-          </TabsContent>
-
-          {/* Removed Local API Server */}
-          {/* <TabsContent value="local-api" className="m-0 flex flex-col gap-4">
+					{/* Removed Local API Server */}
+					{/* <TabsContent value="local-api" className="m-0 flex flex-col gap-4">
             <h1 className="text-2xl font-mondwest mb-2">Local API Server</h1>
 
             <div className="rounded-lg border border-white/10 bg-white/5 p-4">
@@ -243,8 +311,8 @@ export default function SettingsTabs() {
             </div>
           </TabsContent> */}
 
-          {/* Removed HTTPS Proxy */}
-          {/* <TabsContent value="https-proxy" className="m-0 flex flex-col gap-4">
+					{/* Removed HTTPS Proxy */}
+					{/* <TabsContent value="https-proxy" className="m-0 flex flex-col gap-4">
             <h1 className="text-2xl font-mondwest mb-2">HTTPS Proxy</h1>
 
             <div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-4 relative">
@@ -292,13 +360,13 @@ export default function SettingsTabs() {
             </div>
           </TabsContent> */}
 
-          {/* Removed Extensions */}
-          {/* <TabsContent value="extensions" className="m-0 flex flex-col gap-2">
+					{/* Removed Extensions */}
+					{/* <TabsContent value="extensions" className="m-0 flex flex-col gap-2">
             <h1 className="text-2xl font-mondwest mb-4">Extensions</h1>
             <div className="rounded-lg border border-white/10 bg-white/5 p-4">Coming soon…</div>
           </TabsContent> */}
-        </div>
-      </Tabs>
-    </div>
-  );
+				</div>
+			</Tabs>
+		</div>
+	);
 }
