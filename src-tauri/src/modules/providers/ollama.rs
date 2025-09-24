@@ -12,6 +12,12 @@ pub struct OllamaProvider {
     client: Ollama,
 }
 
+impl Default for OllamaProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OllamaProvider {
     pub fn new() -> Self {
         Self {
@@ -55,7 +61,7 @@ impl OllamaProvider {
                             }
                             Err(e) => {
                                 let error_msg = format!("Ollama error: {:?}", e);
-                                let _ = tx.send(Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
+                                let _ = tx.send(Err(Box::new(std::io::Error::other(error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
                                 break;
                             }
                         }
@@ -67,7 +73,7 @@ impl OllamaProvider {
                     } else {
                         format!("Failed to start Ollama stream: {}", e)
                     };
-                    let _ = tx.send(Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
+                    let _ = tx.send(Err(Box::new(std::io::Error::other(error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
                 }
             }
         });

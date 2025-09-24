@@ -65,7 +65,7 @@ pub async fn get_hardware_info(state: tauri::State<'_, AppSys>) -> Result<Hardwa
             #[allow(non_snake_case)]
             struct Win32Processor { Name: Option<String> }
             if let Ok(com) = COMLibrary::new() {
-                if let Ok(wmi_con) = WMIConnection::new(com.into()) {
+                if let Ok(wmi_con) = WMIConnection::new(com) {
                     if let Ok(results) = wmi_con.raw_query::<Win32Processor>("SELECT Name FROM Win32_Processor") {
                         if let Some(first) = results.into_iter().next() { cpu_model = first.Name.unwrap_or(cpu_model); }
                     }
@@ -95,7 +95,7 @@ pub async fn get_hardware_info(state: tauri::State<'_, AppSys>) -> Result<Hardwa
         #[allow(non_snake_case)]
         struct Win32VideoController { Name: Option<String>, AdapterRAM: Option<i64> }
         if let Ok(com) = COMLibrary::new() {
-            if let Ok(wmi_con) = WMIConnection::new(com.into()) {
+            if let Ok(wmi_con) = WMIConnection::new(com) {
                 if let Ok(results) = wmi_con.raw_query::<Win32VideoController>("SELECT Name, AdapterRAM FROM Win32_VideoController") {
                     for r in results {
                         gpus.push(GpuInfo { 

@@ -658,7 +658,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
             // Use actual local models
             for model in local_models {
                 out.push(ListedModel {
-                    model: model,
+                    model,
                     adapter_kind: "Ollama".to_string(),
                     enabled: true, // Ollama runs locally, no API key needed
                 });

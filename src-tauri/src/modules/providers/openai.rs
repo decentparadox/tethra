@@ -123,8 +123,8 @@ fn parse_openai_chunk(chunk: Bytes) -> Result<Option<String>, Box<dyn std::error
         }
         
         // Handle SSE data lines
-        if line.starts_with("data: ") {
-            let json_data = &line[6..]; // Remove "data: " prefix
+        if let Some(json_data) = line.strip_prefix("data: ") {
+            // Remove "data: " prefix
             
             // Skip [DONE] markers
             if json_data == "[DONE]" {

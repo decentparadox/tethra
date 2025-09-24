@@ -153,7 +153,7 @@ pub async fn db_get_messages(app: tauri::AppHandle, conversation_id: String) -> 
 #[tauri::command]
 pub async fn db_create_conversation(app: tauri::AppHandle, input: Option<CreateConversationInput>) -> Result<Conversation, String> {
     let conn = get_conn(&app)?;
-    let id = format!("{}", uuid());
+    let id = uuid().to_string();
     let created_at = Utc::now().to_rfc3339();
     let title = input.as_ref().and_then(|i| i.title.clone()).unwrap_or_else(|| "New Chat".to_string());
     let model = input.as_ref().and_then(|i| i.model.clone());
@@ -167,7 +167,7 @@ pub async fn db_create_conversation(app: tauri::AppHandle, input: Option<CreateC
 #[tauri::command]
 pub async fn db_add_message(app: tauri::AppHandle, input: AddMessageInput) -> Result<Message, String> {
     let conn = get_conn(&app)?;
-    let id = format!("{}", uuid());
+    let id = uuid().to_string();
     let created_at = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -325,7 +325,7 @@ pub async fn db_get_ai_messages(app: tauri::AppHandle, conversation_id: String) 
 #[tauri::command]
 pub async fn db_add_ai_message(app: tauri::AppHandle, input: AddAIMessageInput) -> Result<AIMessage, String> {
     let conn = get_conn(&app)?;
-    let id = format!("{}", uuid());
+    let id = uuid().to_string();
     let created_at = Utc::now().to_rfc3339();
 
     // Construct the full AI SDK message structure
