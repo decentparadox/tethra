@@ -84,26 +84,28 @@ export function PromptInputAttachment({
 
 	return (
 		<div
-			className={cn("group relative h-14 w-14 rounded-md border", className)}
+			className={cn("group relative flex items-center", className)}
 			key={data.id}
 			{...props}
 		>
-			{data.mediaType?.startsWith("image/") && data.url ? (
-				<img
-					alt={data.filename || "attachment"}
-					className="size-full rounded-md object-cover"
-					height={56}
-					src={data.url}
-					width={56}
-				/>
-			) : (
-				<div className="flex size-full items-center justify-center text-muted-foreground">
-					<PaperclipIcon className="size-4" />
-				</div>
-			)}
+			<div className="inline-flex items-center rounded-lg border border-white/20 bg-white/10 backdrop-blur-sm h-8 px-3 text-sm gap-2 text-white/90 pr-10">
+				<PaperclipIcon className="size-4 shrink-0 text-white/70" />
+				<span className="max-w-[200px] truncate font-medium">
+					{data.filename || "Untitled"}
+				</span>
+				{data.filename && (() => {
+					const parts = data.filename.split(".");
+					const extension = parts.length > 1 ? parts.pop()?.toUpperCase() : "";
+					return extension ? (
+						<span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white/60">
+							{extension}
+						</span>
+					) : null;
+				})()}
+			</div>
 			<Button
 				aria-label="Remove attachment"
-				className="-right-1.5 -top-1.5 absolute h-6 w-6 rounded-full opacity-0 group-hover:opacity-100"
+				className="absolute -right-1 -top-1 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100"
 				onClick={() => attachments.remove(data.id)}
 				size="icon"
 				type="button"
@@ -154,7 +156,7 @@ export function PromptInputAttachments({
 			style={{ height: attachments.files.length ? height : 0 }}
 			{...props}
 		>
-			<div className="flex flex-wrap gap-2 p-3 pt-3" ref={contentRef}>
+			<div className="flex flex-col gap-2 p-3 pt-3" ref={contentRef}>
 				{attachments.files.map((file) => (
 					<Fragment key={file.id}>{children(file)}</Fragment>
 				))}

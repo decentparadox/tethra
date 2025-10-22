@@ -1,6 +1,3 @@
-import { useRef, forwardRef } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import type { VirtualizerHandle } from "virtua";
 import { AIMessage } from "@/components/ai-message";
 import { UserMessage } from "@/components/user-message";
 
@@ -16,38 +13,50 @@ interface MessageListProps {
 	speeds: Record<string, number>;
 	onCopy: (message: Message) => void;
 	onRegenerate: () => void;
+	modelId?: string;
 }
 
-export const MessageList = forwardRef<VirtualizerHandle, MessageListProps>(
-	({ messages, status, speeds, onCopy, onRegenerate }, _ref) => {
-		const bottomRef = useRef<HTMLDivElement | null>(null);
+export const MessageList = ({
+	messages,
+	status,
+	speeds,
+	onCopy,
+	onRegenerate,
+	modelId,
+}: MessageListProps) => {
+	// Find the index of the last assistant message
+	const lastAssistantMessageIndex = messages.reduce((lastIndex, message, index) => {
+		return message.role === "assistant" ? index : lastIndex;
+	}, -1);
 
-		return (
-			<ScrollArea className="h-full w-full rounded-md p-4 flex-1 overflow-y-auto space-y-2 no-scrollbar">
-				<div className="h-full w-full overflow-y-auto">
-					{/* {console.log(messages)} */}
-					{messages.map((message) => (
-						<div key={message.id} className="mb-4">
-							{message.role === "assistant" ? (
-								<AIMessage
-									message={message}
-									status={
-										status as "submitted" | "streaming" | "ready" | "error"
-									}
-									onCopy={() => onCopy(message)}
-									onRegenerate={() => onRegenerate()}
-									tokensPerSecond={speeds[message.id]}
-								/>
-							) : (
-								<UserMessage message={message} />
-							)}
-						</div>
-					))}
-					<div ref={bottomRef} />
-				</div>
-			</ScrollArea>
-		);
-	},
-);
-
-MessageList.displayName = "MessageList";
+	return (
+		<div className="flex flex-col space-y-4 no-scrollbar">
+			{messages.map((message, index) => {
+				// Only the last assistant message should have streaming status
+				const isLastAssistant = index === lastAssistantMessageIndex;
+				const messageStatus = (message.role === "assistant" && isLastAssistant) 
+					? status 
+					: "ready";
+				
+				return (
+					<div key={message.id}>
+					{message.role === "assistant" ? (
+						<AIMessage
+							message={message}
+							status={
+								messageStatus as "submitted" | "streaming" | "ready" | "error"
+							}
+							onCopy={() => onCopy(message)}
+							onRegenerate={() => onRegenerate()}
+							tokensPerSecond={speeds[message.id]}
+							modelId={modelId}
+						/>
+					) : (
+						<UserMessage message={message} />
+					)}
+					</div>
+				);
+			})}
+		</div>
+	);
+};

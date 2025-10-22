@@ -1,0 +1,71 @@
+// Project-local debug tasks
+//
+// For more documentation on how to configure debug tasks,
+// see: https://zed.dev/docs/debugger
+// []
+// {
+//   // Use IntelliSense to learn about possible attributes.
+//   // Hover to view descriptions of existing attributes.
+//   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//   "version": "0.2.0",
+//   "configurations": [
+//     {
+//       "type": "lldb",
+//       "request": "launch",
+//       "name": "Tauri Development Debug",
+//       "cargo": {
+//         "args": [
+//           "build",
+//           "--manifest-path=./src-tauri/Cargo.toml",
+//           "--no-default-features"
+//         ]
+//       },
+//       // task for the `beforeDevCommand` if used, must be configured in `.vscode/tasks.json`
+//       "preLaunchTask": "ui:dev"
+//     },
+//     {
+//       "type": "lldb",
+//       "request": "launch",
+//       "name": "Tauri Production Debug",
+//       "cargo": {
+//         "args": ["build", "--release", "--manifest-path=./src-tauri/Cargo.toml"]
+//       },
+//       // task for the `beforeBuildCommand` if used, must be configured in `.vscode/tasks.json`
+//       "preLaunchTask": "ui:build"
+//     }
+//   ]
+// }
+
+[
+  {
+    "label": "Tauri Development Debug",
+    "adapter": "CodeLLDB",
+    // "program": "path_to_program",
+    "request": "launch",
+    "build": {
+      "command": "cargo",
+      "args": [
+        "build",
+        "--manifest-path=./src-tauri/Cargo.toml",
+        "--no-default-features"
+      ]
+    },
+    "preRunCommands": ["pnpm run ui:dev"]
+  },
+  {
+    "label": "Tauri Production Debug",
+    "adapter": "CodeLLDB",
+    // "program": "path_to_program",
+    "request": "launch",
+    "build": {
+      "command": "cargo",
+      "args": [
+        "build",
+        "--release",
+        "--manifest-path=./src-tauri/Cargo.toml",
+        "--no-default-features"
+      ]
+    },
+    "preRunCommands": ["pnpm run ui:build"]
+  }
+]

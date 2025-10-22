@@ -16,19 +16,20 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, "transport"> &
 // making a nice reusable hook for chat functionality.
 export function useChat(
 	model: LanguageModel,
+	adapterKind?: string,
 	options?: CustomChatOptions & { initialMessages?: UIMessage[] },
 ) {
 	const transportRef = useRef<CustomChatTransport | null>(null); // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
 
 	if (!transportRef.current) {
-		transportRef.current = new CustomChatTransport(model);
+		transportRef.current = new CustomChatTransport(model, adapterKind);
 	}
 
 	useEffect(() => {
 		if (transportRef.current) {
-			transportRef.current.updateModel(model);
+			transportRef.current.updateModel(model, adapterKind);
 		}
-	}, [model]);
+	}, [model, adapterKind]);
 
 	const chatResult = useChatZustand({
 		transport: transportRef.current,

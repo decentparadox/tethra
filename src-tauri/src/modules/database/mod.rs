@@ -387,9 +387,9 @@ pub async fn db_save_complete_message(app: tauri::AppHandle, input: SaveComplete
     let default_created_at = chrono::Utc::now().to_rfc3339();
     let created_at = message_with_meta["created_at"].as_str().unwrap_or(&default_created_at);
 
-    // Insert the message
+    // Insert or update the message (upsert)
     conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
         params![message_id, input.conversation_id, role, message_json, created_at],
     ).map_err(|e| format!("Failed to save message: {}", e))?;
 

@@ -8,7 +8,7 @@ async function App() {
 	try {
 		//@ts-ignore
 		const ok = (await window.__TAURI__?.core?.invoke)
-			? window.__TAURI__.core.invoke("has_settings")
+  ? (window as any).__TAURI__.core.invoke("has_settings")
 			: null;
 		if (ok) {
 			window.location.href = "/dashboard";

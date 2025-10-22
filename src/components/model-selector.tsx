@@ -21,22 +21,32 @@ import {
 	getConversation,
 	updateConversationModel,
 } from "../lib/chat";
-import { PROVIDERS, fetchProviderModels } from "../components/providers";
+import {
+	PROVIDERS,
+	fetchProviderModels,
+	getProviderKeyFromDisplayName,
+} from "../components/providers";
 import { getCachedProviders } from "../lib/api-keys";
 import ModelIcon, { type ModelType } from "@/components/model-icon";
 
 function toIcon(adapter: string): ModelType {
 	if (!adapter) return "gemini";
-	const key = adapter.toLowerCase();
-	if (key.includes("openai")) return "openai";
-	if (key.includes("anthropic")) return "anthropic";
-	if (key.includes("gemini") || key.includes("google")) return "gemini";
-	if (key.includes("groq")) return "grok"; // use grok icon for groq
-	if (key.includes("openrouter")) return "openrouter";
-	if (key.includes("mistral")) return "mistral";
-	if (key.includes("ollama")) return "ollama";
-	if (key.includes("x.ai") || key.includes("grok")) return "xai";
-	return key as ModelType;
+	
+	// Use the same logic as provider detection
+	const providerKey = getProviderKeyFromDisplayName(adapter);
+	
+	// Map provider keys to icon types
+	const iconMap: Record<string, ModelType> = {
+		openai: "openai",
+		anthropic: "anthropic",
+		google: "gemini",
+		groq: "grok",
+		openrouter: "openrouter",
+		ollama: "ollama",
+		deepseek: "deepseek",
+	};
+	
+	return iconMap[providerKey] || (providerKey as ModelType);
 }
 
 // helper for provider icons (reserved for future use)
@@ -160,12 +170,21 @@ export default function ModelSelector({
 				if (modelToUse) {
 					setSelected((s) => {
 						const newSelected = s ?? modelToUse;
+						const modelMeta = allModels.find((m) => m.model === newSelected);
 						// Store in localStorage for new conversations
 						localStorage.setItem("selected-model", newSelected);
+						if (modelMeta) {
+							localStorage.setItem("selected-model-adapter", modelMeta.adapter_kind);
+						}
 						// Notify chat view of the initial selection
 						if (!s) {
 							window.dispatchEvent(
-								new CustomEvent("model-selected", { detail: newSelected }),
+								new CustomEvent("model-selected", { 
+									detail: { 
+										model: newSelected, 
+										adapterKind: modelMeta?.adapter_kind 
+									} 
+								}),
 							);
 						}
 						return newSelected;
@@ -183,11 +202,20 @@ export default function ModelSelector({
 					const conversation = await getConversation(conversationId);
 					if (conversation.model) {
 						setSelected(conversation.model);
+						const modelMeta = models.find((m) => m.model === conversation.model);
 						// Store in localStorage for consistency
 						localStorage.setItem("selected-model", conversation.model);
+						if (modelMeta) {
+							localStorage.setItem("selected-model-adapter", modelMeta.adapter_kind);
+						}
 						// Notify chat view of the conversation's model
 						window.dispatchEvent(
-							new CustomEvent("model-selected", { detail: conversation.model }),
+							new CustomEvent("model-selected", { 
+								detail: { 
+									model: conversation.model, 
+									adapterKind: modelMeta?.adapter_kind 
+								} 
+							}),
 						);
 					}
 				} catch (error) {
@@ -244,8 +272,13 @@ export default function ModelSelector({
 										setSelected(current);
 										setOpen(false);
 
+										const selectedModel = models.find((model) => model.model === current);
+
 										// Store current selection in localStorage for new conversations
 										localStorage.setItem("selected-model", current);
+										if (selectedModel) {
+											localStorage.setItem("selected-model-adapter", selectedModel.adapter_kind);
+										}
 
 										// Persist the model selection if we have a conversation
 										if (conversationId) {
@@ -261,7 +294,12 @@ export default function ModelSelector({
 
 										// Notify listeners (e.g., chat view)
 										window.dispatchEvent(
-											new CustomEvent("model-selected", { detail: current }),
+											new CustomEvent("model-selected", { 
+												detail: { 
+													model: current, 
+													adapterKind: selectedModel?.adapter_kind 
+												} 
+											}),
 										);
 									}}
 									className=""

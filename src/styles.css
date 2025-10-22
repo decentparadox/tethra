@@ -93,6 +93,12 @@
 :root,
 body {
 	font-size: var(--app-font-size);
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+
+body::-webkit-scrollbar {
+	display: none;
 }
 
 .chat-container {
@@ -164,6 +170,15 @@ body {
 	scrollbar-width: none;
 }
 .no-scrollbar::-webkit-scrollbar {
+	display: none;
+}
+
+/* Hide scrollbars on all child divs within no-scrollbar */
+.no-scrollbar * {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+.no-scrollbar *::-webkit-scrollbar {
 	display: none;
 }
 
