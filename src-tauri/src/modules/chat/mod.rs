@@ -1,11 +1,6 @@
+use crate::modules::providers::OllamaProvider;
+use crate::modules::settings::read_settings;
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, Emitter};
-use chrono::Utc;
-use rusqlite::params;
-use crate::modules::settings::{read_settings, setup_provider_env_for_model};
-use crate::modules::database::get_conn;
-use crate::modules::utils::uuid;
-use crate::modules::providers::{GeminiProvider, OpenAIProvider, AnthropicProvider, OpenRouterProvider, OllamaProvider};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatStreamToken {
@@ -27,10 +22,10 @@ pub struct ChatStreamEnd {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct StreamChatInput { 
-    pub conversation_id: String, 
-    pub user_message: String, 
-    pub model: Option<String> 
+pub struct StreamChatInput {
+    pub conversation_id: String,
+    pub user_message: String,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,28 +35,16 @@ pub struct ListedModel {
     pub enabled: bool,
 }
 
-fn is_openrouter_model(model: &str) -> bool {
-    // OpenRouter models typically have format "provider/model" or "openrouter/auto"
-    // Check for common OpenRouter patterns
-    model.contains("openrouter") ||
-    model.contains("anthropic/") ||
-    model.contains("openai/") ||
-    model.contains("google/") ||
-    model.contains("meta-llama/") ||
-    model.contains("mistral/") ||
-    model.contains("cohere/") ||
-    // Add more provider prefixes as needed
-    (model.contains("/") && !model.contains(":")) // General provider/model format, excluding Ollama's model:tag format
-}
-
+// stream_chat is no longer used - frontend uses AI SDK directly
+// Keeping the function signature commented out for reference
+/*
 #[tauri::command]
 pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Result<(), String> {
-    let _ = dotenvy::dotenv();
 
     // Log the received input for debugging
     println!("stream_chat called with conversation_id: {}, user_message: {}", input.conversation_id, input.user_message);
     println!("Received model parameter: {:?}", input.model);
-    
+
     let model = input.model.unwrap_or_else(|| {
         // Use a more sensible default - first try to get an enabled model from settings
         match read_settings(&app) {
@@ -81,12 +64,12 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             Err(_) => "gemini-1.5-flash-latest".to_string()
         }
     });
-    
+
     println!("Using model: {}", model);
     setup_provider_env_for_model(&app, &model);
     let conversation_id = input.conversation_id.clone();
     let user_text = input.user_message.clone();
-    
+
     // Update the conversation with the model being used (for persistence)
     if let Err(e) = crate::modules::database::db_update_conversation_model(app.clone(), conversation_id.clone(), model.clone()).await {
         eprintln!("Warning: Failed to update conversation model: {}", e);
@@ -134,9 +117,9 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
         let mut complete_content = String::new();
 
         // Determine which provider to use based on the model
-        let use_manual_streaming = model.starts_with("gemini") || 
-                                  model.starts_with("gpt-") || 
-                                  model.starts_with("claude-") || 
+        let use_manual_streaming = model.starts_with("gemini") ||
+                                  model.starts_with("gpt-") ||
+                                  model.starts_with("claude-") ||
                                   is_openrouter_model(&model) ||
                                   model.starts_with("o1-") ||
                                   model.contains(":") || // Ollama models typically have format like "llama3.2:3b"
@@ -151,7 +134,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
                 let api_key = std::env::var("GEMINI_API_KEY")
                     .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
                     .unwrap_or_default();
-                
+
                 if api_key.is_empty() {
                     complete_content = "Error: Gemini API key not found. Please set GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable.".to_string();
                     None
@@ -169,7 +152,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             } else if model.starts_with("gpt-") || model.starts_with("o1-") {
                 // OpenAI provider
                 let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
-                
+
                 if api_key.is_empty() {
                     complete_content = "Error: OpenAI API key not found. Please set OPENAI_API_KEY environment variable.".to_string();
                     None
@@ -187,7 +170,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             } else if model.starts_with("claude-") {
                 // Anthropic provider
                 let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
-                
+
                 if api_key.is_empty() {
                     complete_content = "Error: Anthropic API key not found. Please set ANTHROPIC_API_KEY environment variable.".to_string();
                     None
@@ -205,7 +188,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             } else if is_openrouter_model(&model) {
                 // OpenRouter provider
                 let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
-                
+
                 if api_key.is_empty() {
                     complete_content = "Error: OpenRouter API key not found. Please set OPENROUTER_API_KEY environment variable.".to_string();
                     None
@@ -243,12 +226,12 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             // Process the stream if we got one
             if let Some(mut stream) = stream_result {
                 use futures::StreamExt;
-                
+
                 while let Some(token_result) = stream.next().await {
                     match token_result {
                         Ok(token) => {
                             complete_content.push_str(&token);
-                            
+
                             // Emit token to frontend
                             let _ = window.emit("chat_stream_token", ChatStreamToken {
                                 conversation_id: conversation_id.clone(),
@@ -274,7 +257,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             //         // Extract the stream from the ChatStreamResponse
             //         use futures::StreamExt;
             //         let mut stream = chat_stream_response.stream;
-                    
+
             //         while let Some(stream_result) = stream.next().await {
             //             match stream_result {
             //                 Ok(event) => {
@@ -287,7 +270,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             //                         ChatStreamEvent::Chunk(chunk) => {
             //                             // Access content directly from the chunk struct
             //                             complete_content.push_str(&chunk.content);
-                                        
+
             //                             // Emit token to frontend
             //                             let _ = window.emit("chat_stream_token", ChatStreamToken {
             //                                 conversation_id: conversation_id.clone(),
@@ -297,7 +280,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             //                         ChatStreamEvent::ReasoningChunk(reasoning_chunk) => {
             //                             // Handle reasoning content if needed
             //                             complete_content.push_str(&reasoning_chunk.content);
-                                        
+
             //                             let _ = window.emit("chat_stream_token", ChatStreamToken {
             //                                 conversation_id: conversation_id.clone(),
             //                                 token: reasoning_chunk.content.clone(),
@@ -327,7 +310,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             //         match client.exec_chat(&model, chat_req.clone(), None).await {
             //             Ok(response) => {
             //                 complete_content = response.first_text().unwrap_or("No response").to_string();
-                            
+
             //                 // Simulate streaming by sending words
             //                 let words: Vec<&str> = complete_content.split_whitespace().collect();
             //                 for word in words {
@@ -345,7 +328,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             //     }
             // }
         }
-        
+
         // Persist the complete message to database as full AI SDK message structure
         let ai_message_json = serde_json::json!({
             "id": message_id,
@@ -390,7 +373,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
             let _current_title: String = conn
                 .query_row("SELECT title FROM conversations WHERE id = ?", params![&conversation_id], |row| row.get(0))
                 .unwrap_or_else(|_| "New Chat".to_string());
-            
+
             // Title generation and retitling is now handled by the frontend using AI SDK
             // No backend genai title generation needed
         }
@@ -398,10 +381,10 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
 
     Ok(())
 }
+*/
 
 #[tauri::command]
 pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>, String> {
-    let _ = dotenvy::dotenv();
     // Build from settings, not env, and only providers we support
     // Keep OpenAI, Anthropic, Gemini, OpenRouter, Groq; exclude Cohere/Mistral/Llama.cpp
     let settings = read_settings(&app).unwrap_or_default();
@@ -459,7 +442,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 "claude-3-5-haiku-20241022",
                 "claude-3-opus-20240229",
                 "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
+                "claude-3-haiku-20240307",
             ];
             for model in default_models {
                 out.push(ListedModel {
@@ -493,7 +476,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 "gemini-1.5-pro-latest",
                 "gemini-1.5-flash-latest",
                 "gemini-1.5-flash-8b-latest",
-                "gemini-2.0-flash-exp"
+                "gemini-2.0-flash-exp",
             ];
             for model in default_models {
                 out.push(ListedModel {
@@ -527,7 +510,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 "llama-3.1-70b-versatile",
                 "llama-3.1-8b-instant",
                 "mixtral-8x7b-32768",
-                "gemma2-9b-it"
+                "gemma2-9b-it",
             ];
             for model in default_models {
                 out.push(ListedModel {
@@ -543,7 +526,6 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
     let openrouter_has_api_key = settings.openrouter_api_key.is_some();
 
     if openrouter_has_api_key {
-
         // Add manually configured models first
         if let Some(models) = settings.openrouter_models.clone() {
             for m in models {
@@ -624,7 +606,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
                 "deepseek-coder",
                 "deepseek-reasoner",
                 "deepseek-chat-67b",
-                "deepseek-coder-33b"
+                "deepseek-coder-33b",
             ];
             for model in default_models {
                 out.push(ListedModel {
@@ -639,9 +621,9 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
     // Mistral - show popular models (no built-in settings support yet)
     let default_mistral_models = vec![
         "mistral-large-latest",
-        "mistral-medium-latest", 
+        "mistral-medium-latest",
         "mistral-small-latest",
-        "codestral-latest"
+        "codestral-latest",
     ];
     for model in default_mistral_models {
         out.push(ListedModel {
@@ -669,10 +651,10 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
             // Fallback to default popular models if Ollama is not running
             let default_ollama_models = vec![
                 "llama3.2:3b",
-                "llama3.1:8b", 
+                "llama3.1:8b",
                 "llama3.1:70b",
                 "qwen2.5:7b",
-                "codellama:7b"
+                "codellama:7b",
             ];
             for model in default_ollama_models {
                 out.push(ListedModel {
@@ -685,10 +667,7 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
     }
 
     // Grok (X.AI) - show popular models (no built-in settings support yet)
-    let default_xai_models = vec![
-        "grok-beta",
-        "grok-vision-beta"
-    ];
+    let default_xai_models = vec!["grok-beta", "grok-vision-beta"];
     for model in default_xai_models {
         out.push(ListedModel {
             model: model.to_string(),
@@ -700,70 +679,29 @@ pub async fn list_chat_models(app: tauri::AppHandle) -> Result<Vec<ListedModel>,
     // Debug: log the models being returned
     println!("Returning {} models:", out.len());
     for model in &out {
-        println!("  {} ({}) - enabled: {}", model.model, model.adapter_kind, model.enabled);
+        println!(
+            "  {} ({}) - enabled: {}",
+            model.model, model.adapter_kind, model.enabled
+        );
     }
-    
+
     Ok(out)
 }
 
 #[tauri::command]
 pub async fn get_adapter_models(adapter_kind: String) -> Result<Vec<String>, String> {
-    let _ = dotenvy::dotenv();
-
     match adapter_kind.as_str() {
         "Ollama" => {
             // Use our custom OllamaProvider for better integration
             let provider = OllamaProvider::new();
             provider.list_models().await
         }
-        "OpenRouter" => {
-            // Use openrouter-rs for OpenRouter model fetching
-            let api_key = std::env::var("OPENROUTER_API_KEY")
-                .map_err(|_| "OpenRouter API key not found. Please set OPENROUTER_API_KEY environment variable.".to_string())?;
-            
-            if api_key.is_empty() {
-                return Err("OpenRouter API key is empty. Please provide a valid API key.".to_string());
-            }
-            
-            use openrouter_rs::OpenRouterClient;
-            
-            let client = OpenRouterClient::builder()
-                .api_key(&api_key)
-                .http_referer("https://tethra.com")
-                .x_title("Tethra AI Chat")
-                .build()
-                .map_err(|e| format!("Failed to create OpenRouter client: {}", e))?;
-            
-            match client.list_models().await {
-                Ok(models) => {
-                    let model_ids: Vec<String> = models.into_iter()
-                        .map(|model| model.id)
-                        .collect();
-                    Ok(model_ids)
-                },
-                Err(e) => Err(format!("Failed to fetch OpenRouter models: {}", e)),
-            }
-        }
         _ => {
-            // Use genai for other providers
-            use genai::Client;
-            use genai::adapter::AdapterKind;
-
-            let client = Client::default();
-
-            let kind = match adapter_kind.as_str() {
-                "OpenAI" => AdapterKind::OpenAI,
-                "Anthropic" => AdapterKind::Anthropic,
-                "Gemini" => AdapterKind::Gemini,
-                "Groq" => AdapterKind::Groq,
-                "Cohere" => AdapterKind::Cohere,
-                _ => return Err(format!("Unsupported adapter kind: {}", adapter_kind)),
-            };
-
-            match client.all_model_names(kind).await {
-                Ok(models) => Ok(models),
-                Err(e) => Err(format!("Failed to fetch models for {}: {}", adapter_kind, e)),
-            }
+            // All other providers are handled by the frontend AI SDK
+            Err(format!(
+                "Provider {} is handled by the frontend",
+                adapter_kind
+            ))
         }
     }
 }
@@ -777,10 +715,11 @@ pub struct OllamaChatInput {
 #[tauri::command]
 pub async fn stream_ollama_chat(
     _app: tauri::AppHandle,
-    input: OllamaChatInput
+    input: OllamaChatInput,
 ) -> Result<Vec<String>, String> {
     // Extract the user message from the messages array
-    let user_message = input.messages
+    let user_message = input
+        .messages
         .iter()
         .find(|msg| msg["role"] == "user")
         .and_then(|msg| msg["content"].as_str())
@@ -806,7 +745,7 @@ pub async fn stream_ollama_chat(
 
             Ok(tokens)
         }
-        Err(e) => Err(format!("Failed to start Ollama stream: {}", e))
+        Err(e) => Err(format!("Failed to start Ollama stream: {}", e)),
     }
 }
 

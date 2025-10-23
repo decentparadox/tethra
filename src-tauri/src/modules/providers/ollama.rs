@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex};
-use std::pin::Pin;
 use futures::{Stream, StreamExt};
 use ollama_rs::{
+    generation::chat::{request::ChatMessageRequest, ChatMessage},
     Ollama,
-    generation::chat::{ChatMessage, request::ChatMessageRequest},
 };
-use tokio_stream::wrappers::ReceiverStream;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 pub struct OllamaProvider {
     client: Ollama,
@@ -29,18 +29,24 @@ impl OllamaProvider {
         &self,
         model: &str,
         user_message: &str,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<
+        Pin<
+            Box<dyn Stream<Item = Result<String, Box<dyn std::error::Error + Send + Sync>>> + Send>,
+        >,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         // Create a channel for streaming tokens
-        let (tx, rx) = mpsc::channel::<Result<String, Box<dyn std::error::Error + Send + Sync>>>(100);
-        
+        let (tx, rx) =
+            mpsc::channel::<Result<String, Box<dyn std::error::Error + Send + Sync>>>(100);
+
         let client = self.client.clone();
         let model = model.to_string();
         let user_message = user_message.to_string();
-        
+
         // Spawn the chat task
         tokio::spawn(async move {
             let history = Arc::new(Mutex::new(vec![]));
-            
+
             let chat_request = ChatMessageRequest::new(
                 model.clone(),
                 vec![ChatMessage::user(user_message.clone())],
@@ -61,19 +67,27 @@ impl OllamaProvider {
                             }
                             Err(e) => {
                                 let error_msg = format!("Ollama error: {:?}", e);
-                                let _ = tx.send(Err(Box::new(std::io::Error::other(error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
+                                let _ = tx
+                                    .send(Err(Box::new(std::io::Error::other(error_msg))
+                                        as Box<dyn std::error::Error + Send + Sync>))
+                                    .await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let error_msg = if e.to_string().contains("connection") || e.to_string().contains("Connection refused") {
+                    let error_msg = if e.to_string().contains("connection")
+                        || e.to_string().contains("Connection refused")
+                    {
                         "Ollama is not running. Please start Ollama first.".to_string()
                     } else {
                         format!("Failed to start Ollama stream: {}", e)
                     };
-                    let _ = tx.send(Err(Box::new(std::io::Error::other(error_msg)) as Box<dyn std::error::Error + Send + Sync>)).await;
+                    let _ = tx
+                        .send(Err(Box::new(std::io::Error::other(error_msg))
+                            as Box<dyn std::error::Error + Send + Sync>))
+                        .await;
                 }
             }
         });
@@ -88,26 +102,34 @@ impl OllamaProvider {
                 if models.is_empty() {
                     return Err("No models found. Please pull some models first using 'ollama pull <model-name>'.".to_string());
                 }
-                
+
                 let model_names: Vec<String> = models
                     .into_iter()
                     .map(|model| {
                         // Log model info for debugging
-                        println!("Found Ollama model: {} (size: {} bytes, modified: {})", 
-                                model.name, model.size, model.modified_at);
+                        println!(
+                            "Found Ollama model: {} (size: {} bytes, modified: {})",
+                            model.name, model.size, model.modified_at
+                        );
                         model.name
                     })
                     .collect();
-                    
+
                 println!("Total Ollama models found: {}", model_names.len());
                 Ok(model_names)
             }
             Err(e) => {
                 // Check if it's a connection error (Ollama not running)
                 let error_str = e.to_string();
-                if error_str.contains("connection") || error_str.contains("Connection refused") || 
-                   error_str.contains("ConnectError") || error_str.contains("11434") {
-                    Err("Ollama is not running. Please start Ollama with 'ollama serve' first.".to_string())
+                if error_str.contains("connection")
+                    || error_str.contains("Connection refused")
+                    || error_str.contains("ConnectError")
+                    || error_str.contains("11434")
+                {
+                    Err(
+                        "Ollama is not running. Please start Ollama with 'ollama serve' first."
+                            .to_string(),
+                    )
                 } else {
                     Err(format!("Failed to list Ollama models: {}", e))
                 }
@@ -118,13 +140,11 @@ impl OllamaProvider {
     /// Get detailed information about a specific model
     pub async fn get_model_info(&self, model_name: &str) -> Result<String, String> {
         match self.client.show_model_info(model_name.to_string()).await {
-            Ok(info) => {
-                Ok(format!("Model: {}\nParameters: {}\nTemplate: {}", 
-                          model_name, info.parameters, info.template))
-            }
-            Err(e) => {
-                Err(format!("Failed to get model info: {}", e))
-            }
+            Ok(info) => Ok(format!(
+                "Model: {}\nParameters: {}\nTemplate: {}",
+                model_name, info.parameters, info.template
+            )),
+            Err(e) => Err(format!("Failed to get model info: {}", e)),
         }
     }
 }
