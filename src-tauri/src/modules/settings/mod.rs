@@ -335,7 +335,7 @@ pub async fn get_general_info(app: tauri::AppHandle) -> Result<GeneralInfo, Stri
         .app_log_dir()
         .map_err(|e| format!("paths: {e}"))?;
     Ok(GeneralInfo {
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        app_version: app.package_info().version.to_string(),
         app_data_dir: app_data_dir.to_string_lossy().to_string(),
         logs_dir: logs_dir.to_string_lossy().to_string(),
     })
