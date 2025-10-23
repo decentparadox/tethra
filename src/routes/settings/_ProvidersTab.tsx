@@ -342,7 +342,7 @@ export default function ProvidersTab() {
 						className="inline-flex items-center gap-1 text-xs opacity-70 hover:opacity-100"
 						onClick={() => setActive(null)}
 					>
-						<ArrowLeft size={14} /> Back to Model Providers
+						<ArrowLeft size={14} />
 					</button>
 					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
 						<div className="text-xl font-mondwest mb-1 flex items-center gap-2">
