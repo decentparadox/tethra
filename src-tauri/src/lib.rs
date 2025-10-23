@@ -12,6 +12,7 @@ use modules::system::*;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppSys::default())
         .invoke_handler(tauri::generate_handler![
             save_settings,
