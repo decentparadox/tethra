@@ -20,8 +20,8 @@ export default function GeneralTab() {
 	const [installing, setInstalling] = useState(false);
 	const [updateAvailable, setUpdateAvailable] = useState<{
 		version: string;
-		date: string;
-		body: string;
+		date?: string;
+		body?: string;
 	} | null>(null);
 	
 	useEffect(() => {
@@ -183,9 +183,11 @@ export default function GeneralTab() {
 									<div className="text-sm font-medium text-green-400">
 										Update Available: v{updateAvailable.version}
 									</div>
-									<div className="text-xs opacity-70">
-										Released: {new Date(updateAvailable.date).toLocaleDateString()}
-									</div>
+									{updateAvailable.date && (
+										<div className="text-xs opacity-70">
+											Released: {new Date(updateAvailable.date).toLocaleDateString()}
+										</div>
+									)}
 									{updateAvailable.body && (
 										<div className="text-xs opacity-70 mt-2 p-2 bg-white/5 rounded border border-white/10 max-h-32 overflow-y-auto">
 											{updateAvailable.body}
