@@ -125,7 +125,7 @@ export function useMessageManager(
     forceSaveAssistantMessages,
   ]);
 
-  // Combined messages: database messages + only unsaved streaming messages
+  // Combined messages: database messages + only currently streaming assistant message
   const dbMessageIds = new Set(dbMessages.map((msg) => msg.id));
   
   // Process new messages - inject complete text and usage data if available
@@ -164,12 +164,35 @@ export function useMessageManager(
     return msg;
   });
   
-  // Filter out messages that are already in DB
-  const unseenNewMessages = processedNewMessages.filter(
-    (msg) => !dbMessageIds.has(msg.id),
+  // Only show unsaved messages that are actively being processed:
+  // 1. User messages that were just sent (not yet in DB)
+  // 2. Assistant messages that are currently streaming
+  
+  const unsavedMessages = processedNewMessages.filter(msg => !dbMessageIds.has(msg.id));
+  
+  // Find the last user message that's not in DB yet
+  const lastUserMessage = [...unsavedMessages]
+    .reverse()
+    .find((msg) => msg.role === "user");
+  
+  // Find the last assistant message that's not in DB yet
+  const lastAssistantMessage = [...unsavedMessages]
+    .reverse()
+    .find((msg) => msg.role === "assistant");
+  
+  // Check if the last assistant message has streaming content
+  const isStreamingMessage = lastAssistantMessage && (
+    lastAssistantMessage.parts?.some((p: any) => p.text) || 
+    lastAssistantMessage.parts?.some((p: any) => p.state !== "done")
   );
   
-  const allMessages = [...dbMessages, ...unseenNewMessages];
+  // Include: last user message (if not saved) + last assistant message (if streaming)
+  const pendingMessages = [
+    ...(lastUserMessage ? [lastUserMessage] : []),
+    ...(isStreamingMessage ? [lastAssistantMessage] : [])
+  ];
+  
+  const allMessages = [...dbMessages, ...pendingMessages];
 
   // Listen for AI response completion events
   useEffect(() => {
