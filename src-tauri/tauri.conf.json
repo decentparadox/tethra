@@ -10,30 +10,8 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Tethra",
-        "width": 1024,
-        "minWidth": 375,
-        "minHeight": 667,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "transparent": true,
-        "center": true,
-        "hiddenTitle": true,
-        "decorations": true,
-       
-        "titleBarStyle": "Overlay",
-        
-        "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
-          "state": "active",
-          "radius": 2
-        }
-      }
-    ],
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }

@@ -8,6 +8,21 @@ use modules::database::*;
 use modules::settings::*;
 use modules::system::*;
 
+// Import Tauri window builder components
+use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+
+// Import window vibrancy for macOS blur effects
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn apply_vibrancy_effect(window: tauri::Window) {
+    apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+        .expect("Unsupported platform! 'apply_vibrancy' is only supported on macOS");
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -45,12 +60,37 @@ pub fn run() {
             db_archive_conversation,
             db_update_conversation_title,
             db_update_conversation_model,
-            db_get_conversation
+            db_get_conversation,
+            #[cfg(target_os = "macos")]
+            apply_vibrancy_effect
         ])
         .setup(|app| {
+            let win_builder =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .title("Tethra")
+                    .inner_size(1024.0, 800.0)
+                    .min_inner_size(375.0, 667.0)
+                    .resizable(true)
+                    .fullscreen(false)
+                    .transparent(true)
+                    .decorations(true)
+                    .hidden_title(false)
+                    .title_bar_style(TitleBarStyle::Visible)
+                    .center();
+
+                    
+            let window = win_builder.build().unwrap();
+
+            
+            // Apply vibrancy effect for blur background on macOS
+            #[cfg(target_os = "macos")]
+            apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+                .expect("Failed to apply vibrancy");
+
             if cfg!(debug_assertions) {
                 app.handle();
             }
+
             Ok(())
         })
         .run(tauri::generate_context!())
