@@ -74,13 +74,12 @@ pub fn run() {
                     .fullscreen(false)
                     .transparent(true)
                     .decorations(true)
-                    .title_bar_style(TitleBarStyle::Visible)
                     .center();
 
             // `hidden_title` is only available on macOS; gate to avoid Linux/Windows build failures.
             #[cfg(target_os = "macos")]
             {
-                win_builder = win_builder.hidden_title(false);
+                win_builder = win_builder.hidden_title(false) .title_bar_style(TitleBarStyle::Visible);
             }
 
             let window = win_builder.build().unwrap();
