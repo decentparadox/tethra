@@ -2,6 +2,9 @@
   "name": ".",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^20.0.0"
+  },
   "scripts": {
     "dev": "vite --port 3000",
     "start": "vite --port 3000",
@@ -99,6 +102,9 @@
     "web-vitals": "^4.2.4"
   },
   "pnpm": {
+    "overrides": {
+      "sharp": "^0.33.5"
+    },
     "onlyBuiltDependencies": [
       "@biomejs/biome",
       "@tailwindcss/oxide",

@@ -65,7 +65,7 @@ pub fn run() {
             apply_vibrancy_effect
         ])
         .setup(|app| {
-            let win_builder =
+            let mut win_builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("Tethra")
                     .inner_size(1024.0, 800.0)
@@ -74,11 +74,15 @@ pub fn run() {
                     .fullscreen(false)
                     .transparent(true)
                     .decorations(true)
-                    .hidden_title(false)
                     .title_bar_style(TitleBarStyle::Visible)
                     .center();
 
-                    
+            // `hidden_title` is only available on macOS; gate to avoid Linux/Windows build failures.
+            #[cfg(target_os = "macos")]
+            {
+                win_builder = win_builder.hidden_title(false);
+            }
+
             let window = win_builder.build().unwrap();
 
             
